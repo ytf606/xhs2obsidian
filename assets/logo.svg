@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff2442" />
+      <stop offset="100%" style="stop-color:#b5001f" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="120" height="120" rx="26" ry="26" fill="url(#bg)" />
+
+  <!-- Left: note icon, centered at (30, 60) -->
+  <rect x="11" y="30" width="37" height="58" rx="5" ry="5" fill="white" opacity="0.95"/>
+  <!-- Bookmark notch -->
+  <polygon points="11,88 29.5,77 48,88 48,30 11,30" fill="white" opacity="0.95"/>
+  <!-- Text lines -->
+  <line x1="18" y1="42" x2="41" y2="42" stroke="#e8001a" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="18" y1="51" x2="41" y2="51" stroke="#e8001a" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="18" y1="60" x2="32" y2="60" stroke="#e8001a" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Center arrow, at y=60 -->
+  <line x1="55" y1="60" x2="67" y2="60" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+  <polyline points="62,53 69,60 62,67" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Right: Obsidian diamond, centered at (90, 60) -->
+  <!-- top: 90,22  mid: 72,57 / 108,57  inner: 90,63  bottom: 90,98 -->
+  <polygon points="90,22 108,57 90,63" fill="white" opacity="0.95"/>
+  <polygon points="90,22 72,57  90,63" fill="white" opacity="0.72"/>
+  <polygon points="90,63 108,57 90,98" fill="white" opacity="0.42"/>
+  <polygon points="90,63 72,57  90,98" fill="white" opacity="0.25"/>
+</svg>

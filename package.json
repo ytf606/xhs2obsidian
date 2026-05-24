@@ -1,0 +1,29 @@
+{
+  "name": "xhs2obsidian",
+  "version": "1.0.0",
+  "description": "Sync Xiaohongshu (小红书) bookmarks, posts and likes to your Obsidian vault",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "package": "npm run build && node package.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "xiaohongshu",
+    "rednote",
+    "xhs",
+    "sync"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^16.11.6",
+    "archiver": "^7.0.1",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.17.3",
+    "obsidian": "^1.4.4",
+    "tslib": "^2.4.0",
+    "typescript": "^4.7.4"
+  }
+}
