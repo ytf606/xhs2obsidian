@@ -1,7 +1,7 @@
 import { Vault, normalizePath } from 'obsidian';
-import { XhsNote, SYNC_TARGET_FOLDERS } from './types';
+import { XhsNote, XhsUserProfile, SYNC_TARGET_FOLDERS } from './types';
 
-const FOLDER_MAP: Record<string, string> = { ...SYNC_TARGET_FOLDERS, search: 'Search' };
+const FOLDER_MAP: Record<string, string> = { ...SYNC_TARGET_FOLDERS, search: 'Search', user: 'Users' };
 import { log, logError } from './logger';
 
 function formatDate(ts: number): string {
@@ -132,6 +132,49 @@ export class VaultWriter {
       if (existing !== content) {
         await this.vault.adapter.write(filePath, content);
       }
+    } else {
+      await this.vault.create(filePath, content);
+    }
+  }
+
+  async writeUserNote(note: XhsNote, accountName: string): Promise<void> {
+    await this.write(note, 'user', accountName);
+  }
+
+  async writeUserProfile(profile: XhsUserProfile): Promise<void> {
+    const dir = normalizePath(`${this.rootFolder}/Users/${sanitize(profile.nickname)}`);
+    await this.ensureDir(dir);
+    const filePath = normalizePath(`${dir}/_profile.md`);
+
+    const genderLabel = profile.gender === 1 ? '男' : profile.gender === 2 ? '女' : '未知';
+    const content = [
+      '---',
+      `userId: ${yamlStr(profile.userId)}`,
+      `nickname: ${yamlStr(profile.nickname)}`,
+      `location: ${yamlStr(profile.location)}`,
+      `follows: ${profile.follows}`,
+      `fans: ${profile.fans}`,
+      `interaction: ${profile.interaction}`,
+      `noteCount: ${profile.noteCount}`,
+      `fetchedAt: ${yamlStr(profile.fetchedAt)}`,
+      '---',
+      '',
+      `# ${profile.nickname}`,
+      '',
+      ...(profile.desc ? [`${profile.desc}`, ''] : []),
+      `| | |`,
+      `|---|---|`,
+      `| 性别 | ${genderLabel} |`,
+      `| 位置 | ${profile.location || '—'} |`,
+      `| 关注 | ${profile.follows} |`,
+      `| 粉丝 | ${profile.fans} |`,
+      `| 获赞与收藏 | ${profile.interaction} |`,
+      '',
+    ].join('\n');
+
+    if (await this.vault.adapter.exists(filePath)) {
+      const existing = await this.vault.adapter.read(filePath);
+      if (existing !== content) await this.vault.adapter.write(filePath, content);
     } else {
       await this.vault.create(filePath, content);
     }

@@ -215,6 +215,44 @@ export class SignManager {
     return bytes.buffer;
   }
 
+  // Navigate a temporary WebView (same cookie partition) to a URL, wait for
+  // __INITIAL_STATE__ to be populated, then evaluate extractScript and return its result.
+  async extractFromPage(url: string, extractScript: string, timeoutMs = 30000): Promise<any> {
+    const tempContainer = document.createElement('div');
+    tempContainer.style.cssText =
+      'position:fixed;left:-9999px;top:-9999px;width:800px;height:600px;overflow:hidden;pointer-events:none;';
+    document.body.appendChild(tempContainer);
+
+    const tempWv = document.createElement('webview') as Electron.WebviewTag;
+    tempWv.setAttribute('src', url);
+    tempWv.setAttribute('partition', WEBVIEW_PARTITION);
+    tempWv.setAttribute('useragent', USER_AGENT);
+    tempWv.style.cssText = 'width:800px;height:600px;';
+    tempContainer.appendChild(tempWv);
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('页面加载超时')), timeoutMs);
+        tempWv.addEventListener('did-finish-load', () => { clearTimeout(timer); resolve(); }, { once: true });
+        tempWv.addEventListener('did-fail-load', () => { clearTimeout(timer); reject(new Error('页面加载失败')); }, { once: true });
+      });
+
+      await (tempWv as any).executeJavaScript(`new Promise((resolve, reject) => {
+        let n = 0;
+        const check = () => {
+          if (++n > 150) { reject(new Error('__INITIAL_STATE__ timeout')); return; }
+          if (window.__INITIAL_STATE__ !== undefined) resolve();
+          else setTimeout(check, 200);
+        };
+        check();
+      })`);
+
+      return await (tempWv as any).executeJavaScript(extractScript);
+    } finally {
+      tempContainer.remove();
+    }
+  }
+
   destroy(): void {
     this.webviewReady = false;
     this.webview = null;

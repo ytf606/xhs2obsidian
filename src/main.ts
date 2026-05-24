@@ -1,5 +1,5 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, normalizePath } from 'obsidian';
-import { DEFAULT_SETTINGS, RedbookPullSettings, SYNC_TARGET_LABELS, SyncTarget, SEARCH_SORT_LABELS, SearchSort, SearchNoteType, SearchTimeFilter, SearchRangeFilter, SearchPosFilter } from './types';
+import { App, Notice, Plugin, PluginSettingTab, Setting, addIcon, normalizePath } from 'obsidian';
+import { DEFAULT_SETTINGS, RedbookPullSettings, SYNC_TARGET_LABELS, SyncTarget, SEARCH_SORT_LABELS, SearchSort, SearchNoteType, SearchTimeFilter, SearchRangeFilter, SearchPosFilter, FollowedAccount } from './types';
 import { SignManager } from './sign-manager';
 import { log, logError, LOG_FILE } from './logger';
 import { XhsApi } from './xhs-api';
@@ -16,6 +16,7 @@ export default class RedbookPullPlugin extends Plugin {
   private engine: SyncEngine;
   private autoSyncTimer: number | null = null;
   private autoSearchTimer: number | null = null;
+  private autoFollowTimer: number | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -31,7 +32,22 @@ export default class RedbookPullPlugin extends Plugin {
       this.fetchUserInfo().catch(e => logError('[RedbookPull] fetchUserInfo failed', e));
     }
 
-    this.addRibbonIcon('download-cloud', 'Redbook Pull：同步', () => {
+    addIcon('xhs-sync', `
+      <rect width="100" height="100" rx="20" ry="20" fill="#ff2442"/>
+      <rect x="9" y="20" width="32" height="48" rx="4" ry="4" fill="white" opacity="0.95"/>
+      <polygon points="9,68 25,57 41,68 41,20 9,20" fill="white" opacity="0.95"/>
+      <line x1="15" y1="32" x2="35" y2="32" stroke="#ff2442" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="15" y1="41" x2="35" y2="41" stroke="#ff2442" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="15" y1="50" x2="27" y2="50" stroke="#ff2442" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="49" y1="50" x2="60" y2="50" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+      <polyline points="56,44 62,50 56,56" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <polygon points="80,18 96,50 80,55" fill="white" opacity="0.95"/>
+      <polygon points="80,18 64,50 80,55" fill="white" opacity="0.72"/>
+      <polygon points="80,55 96,50 80,88" fill="white" opacity="0.42"/>
+      <polygon points="80,55 64,50 80,88" fill="white" opacity="0.25"/>
+    `);
+
+    this.addRibbonIcon('xhs-sync', 'XHS Sync：同步', () => {
       this.engine.sync(this.settings.syncTarget);
     });
 
@@ -60,6 +76,11 @@ export default class RedbookPullPlugin extends Plugin {
       name: '按关键词搜索同步',
       callback: () => this.engine.syncSearch(),
     });
+    this.addCommand({
+      id: 'sync-followed-accounts',
+      name: '同步订阅账号',
+      callback: () => this.engine.syncFollowedAccounts(),
+    });
 
     this.addSettingTab(new RedbookPullSettingTab(this.app, this));
 
@@ -69,11 +90,15 @@ export default class RedbookPullPlugin extends Plugin {
     if (this.settings.autoSearchEnabled) {
       this.startAutoSearch();
     }
+    if (this.settings.autoFollowEnabled) {
+      this.startAutoFollow();
+    }
   }
 
   onunload(): void {
     this.stopAutoSync();
     this.stopAutoSearch();
+    this.stopAutoFollow();
     this.sign.destroy();
   }
 
@@ -140,6 +165,21 @@ export default class RedbookPullPlugin extends Plugin {
     if (this.autoSearchTimer !== null) {
       window.clearInterval(this.autoSearchTimer);
       this.autoSearchTimer = null;
+    }
+  }
+
+  startAutoFollow(): void {
+    this.stopAutoFollow();
+    const ms = this.settings.followIntervalMinutes * 60 * 1000;
+    this.autoFollowTimer = window.setInterval(() => {
+      this.engine.syncFollowedAccounts();
+    }, ms);
+  }
+
+  stopAutoFollow(): void {
+    if (this.autoFollowTimer !== null) {
+      window.clearInterval(this.autoFollowTimer);
+      this.autoFollowTimer = null;
     }
   }
 }
@@ -668,6 +708,185 @@ class RedbookPullSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
           this.plugin.engine.syncSearch();
         }));
+
+    // ═══════════════════════════════════════════════════════════
+    // 5. 账号订阅
+    // ═══════════════════════════════════════════════════════════
+    section('账号订阅', '订阅指定小红书账号，自动下载其帖子到 Users 目录');
+
+    // 添加账号输入
+    new Setting(containerEl)
+      .setName('添加订阅账号')
+      .setDesc('输入小红书 UID（主页 URL 中 /user/profile/ 后的字符串），按回车添加')
+      .addText(text => {
+        text.setPlaceholder('5f3a...（用户 ID）');
+        text.inputEl.style.width = '220px';
+        text.inputEl.addEventListener('keydown', async (e: KeyboardEvent) => {
+          if (e.key !== 'Enter') return;
+          const raw = text.getValue().trim();
+          // 支持直接粘贴主页 URL
+          const match = raw.match(/\/user\/profile\/([a-zA-Z0-9]+)/);
+          const uid = match ? match[1] : raw;
+          if (!uid) return;
+          if (this.plugin.settings.followedAccounts.some(a => a.userId === uid)) {
+            new Notice('XHS Sync：该账号已在订阅列表中');
+            return;
+          }
+          const newAccount: FollowedAccount = {
+            userId: uid, nickname: '', lastFetchedAt: null,
+            fetchedNoteIds: [], cursor: null, allFetched: false,
+          };
+          this.plugin.settings.followedAccounts.push(newAccount);
+          await this.plugin.saveSettings();
+          text.setValue('');
+          this.display();
+        });
+      });
+
+    // 已订阅账号卡片列表
+    if (this.plugin.settings.followedAccounts.length > 0) {
+      const acctGrid = containerEl.createEl('div');
+      acctGrid.style.cssText =
+        'display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));' +
+        'gap:8px;margin:8px 0 12px 0;';
+
+      for (const acct of this.plugin.settings.followedAccounts) {
+        const card = acctGrid.createEl('div');
+        card.style.cssText =
+          'padding:10px 12px;border-radius:8px;' +
+          'background:var(--background-secondary);' +
+          'border:1px solid var(--background-modifier-border);';
+        const header = card.createEl('div');
+        header.style.cssText = 'display:flex;align-items:flex-start;justify-content:space-between;gap:4px;';
+        const info = header.createEl('div');
+        info.style.cssText = 'min-width:0;';
+        const nameEl = info.createEl('div', {
+          text: acct.nickname || acct.userId.slice(0, 12) + '…',
+        });
+        nameEl.style.cssText = 'font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        const uidEl = info.createEl('div', { text: acct.userId.slice(0, 16) + (acct.userId.length > 16 ? '…' : '') });
+        uidEl.style.cssText = 'font-size:10px;color:var(--text-faint);margin-top:1px;';
+        const rmBtn = header.createEl('button', { text: '×' });
+        rmBtn.style.cssText =
+          'flex-shrink:0;background:none;border:none;cursor:pointer;' +
+          'color:var(--text-muted);font-size:16px;line-height:1;padding:0;';
+        rmBtn.onclick = async () => {
+          this.plugin.settings.followedAccounts =
+            this.plugin.settings.followedAccounts.filter(a => a.userId !== acct.userId);
+          await this.plugin.saveSettings();
+          this.display();
+        };
+
+        const count = acct.fetchedNoteIds.length;
+        const lastSynced = acct.lastFetchedAt
+          ? new Date(acct.lastFetchedAt).toLocaleDateString('zh-CN')
+          : '未同步';
+        const meta = card.createEl('div', {
+          text: `${count} 篇 · ${lastSynced}` + (acct.allFetched ? ' · 已全部获取' : ''),
+        });
+        meta.style.cssText =
+          `font-size:11px;margin-top:4px;color:${acct.allFetched ? 'var(--color-green)' : 'var(--text-muted)'};`;
+
+        // 重置按钮
+        const resetBtn = card.createEl('button', { text: '重置' });
+        resetBtn.style.cssText =
+          'margin-top:6px;font-size:11px;padding:2px 8px;cursor:pointer;border-radius:4px;' +
+          'background:var(--background-modifier-border);border:none;color:var(--text-normal);';
+        resetBtn.onclick = async () => {
+          acct.fetchedNoteIds = [];
+          acct.cursor = null;
+          acct.allFetched = false;
+          acct.lastFetchedAt = null;
+          await this.plugin.saveSettings();
+          this.display();
+        };
+      }
+    }
+
+    // 拉取设置：紧凑网格
+    const followGrid = containerEl.createEl('div');
+    followGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 8px 0;';
+
+    const mkFollowCell = (label: string, hint: string) => {
+      const cell = followGrid.createEl('div');
+      cell.style.cssText =
+        'padding:10px 12px;border-radius:8px;background:var(--background-secondary);' +
+        'border:1px solid var(--background-modifier-border);';
+      cell.createEl('div', { text: label }).style.cssText = 'font-size:11px;color:var(--text-muted);margin-bottom:3px;';
+      if (hint) {
+        cell.createEl('div', { text: hint }).style.cssText = 'font-size:10px;color:var(--text-faint);margin-bottom:4px;';
+      }
+      return cell;
+    };
+
+    const batchFollowCell = mkFollowCell('每次拉取条数', '');
+    const batchFollowDesc = batchFollowCell.createEl('div', { text: '固定 30 条最新帖子' });
+    batchFollowDesc.style.cssText = 'font-size:13px;font-weight:500;color:var(--text-normal);';
+
+    const minDelayCell = mkFollowCell('账号间最小延迟（分钟）', '');
+    const minDelayInput = minDelayCell.createEl('input') as HTMLInputElement;
+    minDelayInput.type = 'number'; minDelayInput.min = '1'; minDelayInput.max = '60';
+    minDelayInput.value = String(this.plugin.settings.followMinDelayMin);
+    minDelayInput.style.cssText =
+      'width:72px;padding:3px 6px;border-radius:4px;font-size:13px;' +
+      'border:1px solid var(--background-modifier-border);' +
+      'background:var(--background-primary);color:var(--text-normal);';
+    minDelayInput.addEventListener('change', async () => {
+      const n = parseInt(minDelayInput.value);
+      if (!isNaN(n) && n >= 1) { this.plugin.settings.followMinDelayMin = n; await this.plugin.saveSettings(); }
+    });
+
+    const maxDelayCell = mkFollowCell('账号间最大延迟（分钟）', '');
+    const maxDelayInput = maxDelayCell.createEl('input') as HTMLInputElement;
+    maxDelayInput.type = 'number'; maxDelayInput.min = '1'; maxDelayInput.max = '120';
+    maxDelayInput.value = String(this.plugin.settings.followMaxDelayMin);
+    maxDelayInput.style.cssText =
+      'width:72px;padding:3px 6px;border-radius:4px;font-size:13px;' +
+      'border:1px solid var(--background-modifier-border);' +
+      'background:var(--background-primary);color:var(--text-normal);';
+    maxDelayInput.addEventListener('change', async () => {
+      const n = parseInt(maxDelayInput.value);
+      if (!isNaN(n) && n >= 1) { this.plugin.settings.followMaxDelayMin = n; await this.plugin.saveSettings(); }
+    });
+
+    // 定时自动同步
+    new Setting(containerEl)
+      .setName('定时自动同步订阅')
+      .setDesc('按设定间隔自动同步全部订阅账号')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.autoFollowEnabled)
+        .onChange(async v => {
+          this.plugin.settings.autoFollowEnabled = v;
+          await this.plugin.saveSettings();
+          v ? this.plugin.startAutoFollow() : this.plugin.stopAutoFollow();
+          this.display();
+        }));
+
+    if (this.plugin.settings.autoFollowEnabled) {
+      new Setting(containerEl)
+        .setName('同步间隔（分钟）')
+        .setDesc('最小 30 分钟')
+        .addText(text => {
+          text.inputEl.style.width = '64px';
+          text.setValue(String(this.plugin.settings.followIntervalMinutes))
+            .onChange(async v => {
+              const n = parseInt(v);
+              if (!isNaN(n) && n >= 30) {
+                this.plugin.settings.followIntervalMinutes = n;
+                await this.plugin.saveSettings();
+                this.plugin.startAutoFollow();
+              }
+            });
+        });
+    }
+
+    new Setting(containerEl)
+      .setName('立即同步订阅账号')
+      .setDesc('拉取所有订阅账号的最新帖子，已下载内容不会重复同步')
+      .addButton(btn => btn
+        .setButtonText('立即同步')
+        .setCta()
+        .onClick(() => this.plugin.engine.syncFollowedAccounts()));
   }
 
   private renderChips(

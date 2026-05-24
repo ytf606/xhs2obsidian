@@ -1,6 +1,6 @@
 import { requestUrl } from 'obsidian';
 import { SignManager } from './sign-manager';
-import { FetchResult, XhsNote, XhsAuthor, XhsImageItem, XhsTagItem, SearchSort, SearchNoteType, SearchTimeFilter, SearchRangeFilter, SearchPosFilter } from './types';
+import { FetchResult, XhsNote, XhsAuthor, XhsImageItem, XhsTagItem, XhsUserProfile, SearchSort, SearchNoteType, SearchTimeFilter, SearchRangeFilter, SearchPosFilter } from './types';
 import { log, logError } from './logger';
 
 function base36Encode(num: bigint): string {
@@ -206,6 +206,72 @@ export class XhsApi {
       cursor: null,
       hasMore: !!(data as any)?.has_more,
     };
+  }
+
+  async fetchUserProfileAndNotes(userId: string, xsecToken = ''): Promise<{ profile: XhsUserProfile; notes: XhsNote[] }> {
+    if (!this.getCookies()) throw new Error('未登录，请先登录小红书');
+    log(`[XhsApi] fetchUserProfileAndNotes via page userId=${userId}`);
+
+    const profileUrl = xsecToken
+      ? `https://www.xiaohongshu.com/user/profile/${encodeURIComponent(userId)}?xsec_token=${encodeURIComponent(xsecToken)}&xsec_source=pc_note`
+      : `https://www.xiaohongshu.com/user/profile/${encodeURIComponent(userId)}`;
+
+    // Extract both profile (basicInfo+interactions) and initial notes in one page load.
+    // Notes are stored as a double-array [[{noteCard,...},...], ...] matching xiaohongshu-mcp user_profile.go
+    const extractScript = `(() => {
+      try {
+        const state = window.__INITIAL_STATE__;
+        if (!state?.user) return null;
+        const pd = state.user.userPageData;
+        const profileData = (pd?.value !== undefined ? pd.value : pd?._value) || pd?._rawValue || {};
+        const nd = state.user.notes;
+        const notesRaw = (nd?.value !== undefined ? nd.value : nd?._value) || [];
+        const notes = [];
+        for (const row of notesRaw) {
+          if (!Array.isArray(row)) continue;
+          for (const item of row) {
+            const card = item.noteCard || item;
+            notes.push({
+              note_id: card.noteId || card.note_id || item.id || '',
+              xsec_token: item.xsecToken || card.xsecToken || '',
+              display_title: card.displayTitle || card.title || '',
+              type: card.type || 'normal',
+              user: card.user || {}
+            });
+          }
+        }
+        return JSON.stringify({ profileData, notes });
+      } catch(e) { return null; }
+    })()`;
+
+    const raw = await this.sign.extractFromPage(profileUrl, extractScript);
+    if (!raw) throw new Error('未能从页面提取用户信息，请确认已登录且账号存在');
+
+    const parsed = JSON.parse(raw as string);
+    const basic = parsed.profileData?.basicInfo ?? {};
+    const interactions: any[] = parsed.profileData?.interactions ?? [];
+    const getCount = (type: string) =>
+      parseInt(interactions.find((i: any) => i.type === type)?.count ?? '0') || 0;
+
+    const profile: XhsUserProfile = {
+      userId,
+      nickname: basic.nickname ?? '',
+      avatar: basic.imageb ?? basic.images ?? '',
+      desc: basic.desc ?? '',
+      gender: basic.gender ?? 0,
+      location: basic.ipLocation ?? basic.ip_location ?? '',
+      follows: getCount('follows'),
+      fans: getCount('fans'),
+      interaction: getCount('interaction'),
+      noteCount: 0,
+      fetchedAt: new Date().toISOString(),
+    };
+
+    const notes = (parsed.notes ?? [])
+      .map((n: any) => toNote(n))
+      .filter((n: XhsNote | null): n is XhsNote => n !== null && !!n.id);
+
+    return { profile, notes };
   }
 
   async fetchNoteDetail(noteId: string, xsecToken: string): Promise<XhsNote | null> {

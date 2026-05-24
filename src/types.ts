@@ -71,6 +71,12 @@ export interface RedbookPullSettings {
   searchPages: Record<string, number>;
   searchedNoteIds: Record<string, string[]>;
   searchAllSynced: Record<string, boolean>;
+  // 账号订阅
+  followedAccounts: FollowedAccount[];
+  followMinDelayMin: number;
+  followMaxDelayMin: number;
+  autoFollowEnabled: boolean;
+  followIntervalMinutes: number;
 }
 
 export const DEFAULT_SETTINGS: RedbookPullSettings = {
@@ -105,6 +111,11 @@ export const DEFAULT_SETTINGS: RedbookPullSettings = {
   searchPages: {},
   searchedNoteIds: {},
   searchAllSynced: {},
+  followedAccounts: [],
+  followMinDelayMin: 1,
+  followMaxDelayMin: 10,
+  autoFollowEnabled: false,
+  followIntervalMinutes: 60,
 };
 
 export interface XhsAuthor {
@@ -147,4 +158,27 @@ export interface FetchResult {
   items: XhsNote[];
   cursor: string | null;
   hasMore: boolean;
+}
+
+export interface XhsUserProfile {
+  userId: string;
+  nickname: string;
+  avatar: string;
+  desc: string;
+  gender: number;
+  location: string;
+  follows: number;
+  fans: number;
+  interaction: number;
+  noteCount: number;
+  fetchedAt: string;
+}
+
+export interface FollowedAccount {
+  userId: string;
+  nickname: string;
+  lastFetchedAt: string | null;
+  fetchedNoteIds: string[];
+  cursor: string | null;
+  allFetched: boolean;
 }

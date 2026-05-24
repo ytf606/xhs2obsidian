@@ -246,6 +246,88 @@ export class SyncEngine {
     }
   }
 
+  async syncFollowedAccounts(): Promise<void> {
+    if (this.syncing) {
+      new Notice('Redbook Pull：同步正在进行中，请稍候');
+      return;
+    }
+    if (!this.settings.followedAccounts.length) {
+      new Notice('Redbook Pull：请先在设置中添加订阅账号');
+      return;
+    }
+    if (!this.settings.a1Cookie) {
+      new Notice('Redbook Pull：请先登录小红书');
+      return;
+    }
+
+    this.syncing = true;
+    let totalSaved = 0;
+    new Notice(`Redbook Pull：开始同步 ${this.settings.followedAccounts.length} 个订阅账号…`);
+
+    try {
+      for (let i = 0; i < this.settings.followedAccounts.length; i++) {
+        const account = this.settings.followedAccounts[i];
+
+        let nickname = account.nickname || account.userId;
+        new Notice(`Redbook Pull：正在加载「${nickname}」的主页…`);
+        let savedCount = 0;
+
+        try {
+          // Load profile page once — gets both user info and initial note list
+          const { profile, notes } = await this.api.fetchUserProfileAndNotes(account.userId);
+          nickname = profile.nickname || nickname;
+          account.nickname = nickname;
+          await this.writer.writeUserProfile(profile);
+          log(`[SyncEngine] profile fetched for ${nickname}, ${notes.length} notes on page`);
+
+          const syncedSet = new Set(account.fetchedNoteIds);
+          const newNotes = notes.filter(n => !syncedSet.has(n.id)).slice(0, 30);
+
+          if (newNotes.length === 0) {
+            new Notice(`Redbook Pull：「${nickname}」无新内容`);
+          } else {
+            new Notice(`Redbook Pull：同步「${nickname}」${newNotes.length} 篇新帖子…`);
+            for (const listNote of newNotes) {
+              let note: XhsNote = listNote;
+              try {
+                const detail = await this.api.fetchNoteDetail(listNote.id, listNote.xsecToken);
+                if (detail) note = detail;
+                await randomSleep(3000, 12000);
+              } catch (e: any) {
+                logError('[SyncEngine] follow fetchNoteDetail error:', e.message);
+              }
+              await this.writer.writeUserNote(note, nickname);
+              account.fetchedNoteIds.push(listNote.id);
+              savedCount++;
+              totalSaved++;
+            }
+            account.lastFetchedAt = new Date().toISOString();
+            await this.saveData();
+            new Notice(`Redbook Pull：「${nickname}」完成，新增 ${savedCount} 篇`);
+          }
+        } catch (e: any) {
+          new Notice(`Redbook Pull：「${nickname}」出错 — ${e.message}`);
+          logError(`[SyncEngine] follow sync error for ${account.userId}:`, e.message);
+        }
+
+        // 账号间随机延迟（分钟 → 毫秒）
+        if (i < this.settings.followedAccounts.length - 1) {
+          const minMs = this.settings.followMinDelayMin * 60 * 1000;
+          const maxMs = this.settings.followMaxDelayMin * 60 * 1000;
+          await randomSleep(minMs, maxMs);
+        }
+      }
+
+      if (totalSaved > 0) new Notice(`Redbook Pull：订阅同步完成，共新增 ${totalSaved} 篇`);
+      else new Notice('Redbook Pull：订阅账号无新内容');
+    } catch (e: any) {
+      new Notice(`Redbook Pull：订阅同步出错 — ${e.message}`);
+      logError('[SyncEngine] syncFollowedAccounts error:', e);
+    } finally {
+      this.syncing = false;
+    }
+  }
+
   private async fetch(target: SyncTarget, cursor: string | null) {
     const num = this.settings.syncBatchSize;
     switch (target) {
