@@ -77,6 +77,13 @@ export interface RedbookPullSettings {
   followMaxDelayMin: number;
   autoFollowEnabled: boolean;
   followIntervalMinutes: number;
+  // 评论同步（三个入口独立开关 + 各自的上限）
+  enableCommentSync: boolean;        // 收藏/点赞/帖子同步
+  commentMaxCount: number;
+  enableSearchCommentSync: boolean;  // 关键词搜索同步
+  searchCommentMaxCount: number;
+  enableFollowCommentSync: boolean;  // 账号订阅同步
+  followCommentMaxCount: number;
 }
 
 export const DEFAULT_SETTINGS: RedbookPullSettings = {
@@ -116,6 +123,12 @@ export const DEFAULT_SETTINGS: RedbookPullSettings = {
   followMaxDelayMin: 10,
   autoFollowEnabled: false,
   followIntervalMinutes: 60,
+  enableCommentSync: false,
+  commentMaxCount: 100,
+  enableSearchCommentSync: false,
+  searchCommentMaxCount: 100,
+  enableFollowCommentSync: false,
+  followCommentMaxCount: 100,
 };
 
 export interface XhsAuthor {
@@ -181,4 +194,19 @@ export interface FollowedAccount {
   fetchedNoteIds: string[];
   cursor: string | null;
   allFetched: boolean;
+}
+
+export interface XhsComment {
+  id: string;
+  content: string;
+  createTime: number;
+  likeCount: string;
+  ipLocation: string;
+  userInfo: {
+    userId: string;
+    nickname: string;
+    avatar: string;
+  };
+  subCommentCount: number;
+  subComments: XhsComment[];
 }

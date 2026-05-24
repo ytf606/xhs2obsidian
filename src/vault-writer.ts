@@ -1,5 +1,5 @@
 import { Vault, normalizePath } from 'obsidian';
-import { XhsNote, XhsUserProfile, SYNC_TARGET_FOLDERS } from './types';
+import { XhsNote, XhsUserProfile, XhsComment, SYNC_TARGET_FOLDERS } from './types';
 
 const FOLDER_MAP: Record<string, string> = { ...SYNC_TARGET_FOLDERS, search: 'Search', user: 'Users' };
 import { log, logError } from './logger';
@@ -29,6 +29,50 @@ function yamlStr(v: unknown): string {
   return String(v);
 }
 
+function profileUrl(userId: string): string {
+  return `https://www.xiaohongshu.com/user/profile/${encodeURIComponent(userId)}`;
+}
+
+function renderComments(comments: XhsComment[], avatarMap: Map<string, string> = new Map()): string {
+  if (comments.length === 0) return '';
+  const total = comments.reduce((n, c) => n + 1 + c.subComments.length, 0);
+  const lines: string[] = [`## 评论 (${total})`, ''];
+
+  for (const c of comments) {
+    lines.push('---', '');
+    const date = c.createTime ? new Date(c.createTime).toISOString().slice(0, 10) : '';
+    const meta = [
+      date,
+      c.ipLocation,
+      c.likeCount !== '0' ? `♥ ${c.likeCount}` : '',
+    ].filter(Boolean).join(' · ');
+    const authorLink = `[**@${c.userInfo.nickname || c.userInfo.userId}**](${profileUrl(c.userInfo.userId)})`;
+    const avatarSrc = avatarMap.get(c.userInfo.userId) ?? '';
+    const avatarImg = avatarSrc ? `![|40](${avatarSrc})` : '';
+    lines.push(`${avatarImg} ${authorLink}${meta ? ` · ${meta}` : ''}`, '');
+    if (c.content) lines.push(c.content, '');
+
+    for (const sub of c.subComments) {
+      const subDate = sub.createTime ? new Date(sub.createTime).toISOString().slice(0, 10) : '';
+      const subMeta = [
+        subDate,
+        sub.ipLocation,
+        sub.likeCount !== '0' ? `♥ ${sub.likeCount}` : '',
+      ].filter(Boolean).join(' · ');
+      const subAuthorLink = `[**@${sub.userInfo.nickname || sub.userInfo.userId}**](${profileUrl(sub.userInfo.userId)})`;
+      const subAvatarSrc = avatarMap.get(sub.userInfo.userId) ?? '';
+      const subAvatarImg = subAvatarSrc ? `![|32](${subAvatarSrc})` : '';
+      lines.push(`> ${subAvatarImg} ${subAuthorLink}${subMeta ? ` · ${subMeta}` : ''}`);
+      lines.push(`> `);
+      if (sub.content) lines.push(`> ${sub.content}`);
+      lines.push('');
+    }
+  }
+
+  lines.push('---', '');
+  return lines.join('\n');
+}
+
 export class VaultWriter {
   constructor(
     private vault: Vault,
@@ -37,7 +81,7 @@ export class VaultWriter {
     private fetchBinary: (url: string) => Promise<ArrayBuffer>,
   ) {}
 
-  async write(note: XhsNote, target: string, category?: string): Promise<void> {
+  async write(note: XhsNote, target: string, category?: string, comments: XhsComment[] = []): Promise<void> {
     const folder = FOLDER_MAP[target] ?? target;
     const subDir = category ? `${folder}/${sanitize(category)}` : folder;
     const noteDir = normalizePath(`${this.rootFolder}/${subDir}`);
@@ -124,7 +168,34 @@ export class VaultWriter {
       mediaLines,
     ].filter(Boolean).join('\n\n');
 
-    const content = `${frontmatter}\n\n${body}\n`;
+    // Download comment avatars to local vault so they display despite CDN Referer restrictions
+    const avatarMap = new Map<string, string>();
+    if (comments.length > 0) {
+      const avatarsDir = normalizePath(`${this.rootFolder}/Media/avatars`);
+      await this.ensureDir(avatarsDir);
+      const walkComment = async (c: XhsComment) => {
+        if (c.userInfo.userId && c.userInfo.avatar && !avatarMap.has(c.userInfo.userId)) {
+          const ext = this.guessExt(c.userInfo.avatar);
+          const avatarFilename = `${c.userInfo.userId}${ext}`;
+          const avatarVaultPath = normalizePath(`${avatarsDir}/${avatarFilename}`);
+          const localRelPath = `${relPrefix}Media/avatars/${avatarFilename}`;
+          avatarMap.set(c.userInfo.userId, localRelPath);
+          if (!await this.vault.adapter.exists(avatarVaultPath)) {
+            try {
+              const buf = await this.fetchBinary(c.userInfo.avatar.replace(/^http:/i, 'https:'));
+              await this.vault.adapter.writeBinary(avatarVaultPath, buf);
+            } catch {
+              avatarMap.delete(c.userInfo.userId);
+            }
+          }
+        }
+        for (const sub of c.subComments) await walkComment(sub);
+      };
+      for (const c of comments) await walkComment(c);
+    }
+
+    const commentSection = renderComments(comments, avatarMap);
+    const content = `${frontmatter}\n\n${body}${commentSection ? '\n\n' + commentSection : '\n'}`;
 
     if (await this.vault.adapter.exists(filePath)) {
       const existing = await this.vault.adapter.read(filePath);

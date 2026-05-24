@@ -1,6 +1,6 @@
 import { requestUrl } from 'obsidian';
 import { SignManager } from './sign-manager';
-import { FetchResult, XhsNote, XhsAuthor, XhsImageItem, XhsTagItem, XhsUserProfile, SearchSort, SearchNoteType, SearchTimeFilter, SearchRangeFilter, SearchPosFilter } from './types';
+import { FetchResult, XhsNote, XhsAuthor, XhsImageItem, XhsTagItem, XhsUserProfile, XhsComment, SearchSort, SearchNoteType, SearchTimeFilter, SearchRangeFilter, SearchPosFilter } from './types';
 import { log, logError } from './logger';
 
 function base36Encode(num: bigint): string {
@@ -75,6 +75,30 @@ function toNote(raw: any): XhsNote | null {
       time: raw.time ?? 0,
       xsecToken: raw.xsec_token ?? '',
       videoUrl,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function toComment(raw: any): XhsComment | null {
+  try {
+    const userRaw = raw.user_info ?? raw.userInfo ?? {};
+    return {
+      id: raw.id ?? '',
+      content: raw.content ?? '',
+      createTime: raw.create_time ?? raw.createTime ?? 0,
+      likeCount: String(raw.like_count ?? raw.likeCount ?? '0'),
+      ipLocation: raw.ip_location ?? raw.ipLocation ?? '',
+      userInfo: {
+        userId: userRaw.user_id ?? userRaw.userId ?? '',
+        nickname: userRaw.nickname ?? '',
+        avatar: userRaw.avatar ?? userRaw.images ?? '',
+      },
+      subCommentCount: parseInt(raw.sub_comment_count ?? raw.subCommentCount ?? '0') || 0,
+      subComments: (raw.sub_comments ?? raw.subComments ?? [])
+        .map(toComment)
+        .filter((c: XhsComment | null): c is XhsComment => c !== null),
     };
   } catch {
     return null;
@@ -290,5 +314,47 @@ export class XhsApi {
     if (!item) return null;
     const card = item.note_card ?? item;
     return toNote({ ...card, xsec_token: xsecToken });
+  }
+
+  async fetchComments(noteId: string, cursor: string, xsecToken: string): Promise<{ comments: XhsComment[]; cursor: string; hasMore: boolean }> {
+    if (!this.getCookies()) throw new Error('未登录，请先登录小红书');
+    const parts: string[] = [];
+    parts.push(`note_id=${encodeURIComponent(noteId)}`);
+    if (cursor) parts.push(`cursor=${encodeURIComponent(cursor)}`);
+    parts.push('image_formats=jpg,webp,avif');
+    if (xsecToken) parts.push(`xsec_token=${encodeURIComponent(xsecToken)}`);
+    const path = '/api/sns/web/v2/comment/page';
+    const signPath = `${path}?${parts.join('&')}`;
+    const fetchUrl = `${API_BASE}${signPath}`;
+    log(`[RedbookPull] fetchComments ${noteId} cursor=${cursor}`);
+    const data = await this.sign.request(signPath, fetchUrl, 'GET', undefined, this.getCookies());
+    const list: any[] = (data as any)?.comments ?? [];
+    const comments = list.map(toComment).filter((c): c is XhsComment => c !== null);
+    return {
+      comments,
+      cursor: (data as any)?.cursor ?? '',
+      hasMore: !!((data as any)?.has_more ?? (data as any)?.hasMore),
+    };
+  }
+
+  async fetchSubComments(noteId: string, rootCommentId: string, cursor: string): Promise<{ comments: XhsComment[]; cursor: string; hasMore: boolean }> {
+    if (!this.getCookies()) throw new Error('未登录，请先登录小红书');
+    const parts: string[] = [];
+    parts.push(`note_id=${encodeURIComponent(noteId)}`);
+    parts.push(`root_comment_id=${encodeURIComponent(rootCommentId)}`);
+    parts.push('num=30');
+    if (cursor) parts.push(`cursor=${encodeURIComponent(cursor)}`);
+    const path = '/api/sns/web/v2/comment/sub/page';
+    const signPath = `${path}?${parts.join('&')}`;
+    const fetchUrl = `${API_BASE}${signPath}`;
+    log(`[RedbookPull] fetchSubComments note=${noteId} root=${rootCommentId}`);
+    const data = await this.sign.request(signPath, fetchUrl, 'GET', undefined, this.getCookies());
+    const list: any[] = (data as any)?.comments ?? [];
+    const comments = list.map(toComment).filter((c): c is XhsComment => c !== null);
+    return {
+      comments,
+      cursor: (data as any)?.cursor ?? '',
+      hasMore: !!((data as any)?.has_more ?? (data as any)?.hasMore),
+    };
   }
 }
