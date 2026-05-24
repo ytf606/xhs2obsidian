@@ -232,6 +232,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════
     section('同步设置');
 
+    // 存储目录：全宽
     new Setting(containerEl)
       .setName('存储目录')
       .setDesc('同步内容在 Vault 中的根目录名')
@@ -244,39 +245,66 @@ class RedbookPullSettingTab extends PluginSettingTab {
           this.plugin.rebuildEngine();
         }));
 
-    new Setting(containerEl)
-      .setName('同步内容')
-      .setDesc('Ribbon 图标和自动同步触发的内容类型')
-      .addDropdown(dd => {
-        for (const [key, label] of Object.entries(SYNC_TARGET_LABELS)) {
-          dd.addOption(key, label);
-        }
-        dd.setValue(this.plugin.settings.syncTarget);
-        dd.onChange(async v => {
-          this.plugin.settings.syncTarget = v as SyncTarget;
-          await this.plugin.saveSettings();
-        });
-      });
+    // 同步内容 + 每批数量：2 列并排
+    const syncRow = containerEl.createEl('div');
+    syncRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0;';
 
-    new Setting(containerEl)
-      .setName('每批同步数量')
-      .setDesc('每次 API 请求拉取的条目数，建议 5–10，过大容易触发限流')
-      .addText(text => {
-        text.inputEl.style.width = '64px';
-        text.setValue(String(this.plugin.settings.syncBatchSize))
-          .onChange(async v => {
-            const n = parseInt(v);
-            if (!isNaN(n) && n >= 1 && n <= 20) {
-              this.plugin.settings.syncBatchSize = n;
-              await this.plugin.saveSettings();
-            }
-          });
-      });
+    const syncTargetCell = syncRow.createEl('div');
+    syncTargetCell.style.cssText =
+      'padding:10px 14px;border-radius:8px;background:var(--background-secondary);' +
+      'border:1px solid var(--background-modifier-border);';
+    syncTargetCell.createEl('div', { text: '同步内容' }).style.cssText =
+      'font-size:12px;color:var(--text-muted);margin-bottom:6px;';
+    const targetSel = syncTargetCell.createEl('select') as HTMLSelectElement;
+    targetSel.style.cssText =
+      'width:100%;background:var(--background-primary);color:var(--text-normal);' +
+      'border:1px solid var(--background-modifier-border);border-radius:4px;' +
+      'padding:4px 8px;font-size:13px;cursor:pointer;';
+    for (const [key, label] of Object.entries(SYNC_TARGET_LABELS)) {
+      const o = targetSel.createEl('option', { text: label, value: key }) as HTMLOptionElement;
+      if (key === this.plugin.settings.syncTarget) o.selected = true;
+    }
+    targetSel.addEventListener('change', async () => {
+      this.plugin.settings.syncTarget = targetSel.value as SyncTarget;
+      await this.plugin.saveSettings();
+    });
 
-    new Setting(containerEl)
+    const batchCell = syncRow.createEl('div');
+    batchCell.style.cssText =
+      'padding:10px 14px;border-radius:8px;background:var(--background-secondary);' +
+      'border:1px solid var(--background-modifier-border);';
+    batchCell.createEl('div', { text: '每批数量' }).style.cssText =
+      'font-size:12px;color:var(--text-muted);margin-bottom:6px;';
+    const batchDesc = batchCell.createEl('div', { text: '建议 5–10，过大易触发限流' });
+    batchDesc.style.cssText = 'font-size:11px;color:var(--text-faint);margin-bottom:6px;';
+    const batchInput = batchCell.createEl('input') as HTMLInputElement;
+    batchInput.type = 'number';
+    batchInput.min = '1'; batchInput.max = '20';
+    batchInput.value = String(this.plugin.settings.syncBatchSize);
+    batchInput.style.cssText =
+      'width:72px;padding:4px 8px;border-radius:4px;font-size:13px;' +
+      'border:1px solid var(--background-modifier-border);' +
+      'background:var(--background-primary);color:var(--text-normal);';
+    batchInput.addEventListener('change', async () => {
+      const n = parseInt(batchInput.value);
+      if (!isNaN(n) && n >= 1 && n <= 20) {
+        this.plugin.settings.syncBatchSize = n;
+        await this.plugin.saveSettings();
+      }
+    });
+
+    // 同步标签 + 同步专辑：2 列 toggle 卡片（使用 Setting API）
+    const toggleGrid = containerEl.createEl('div');
+    toggleGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;';
+
+    const tagsCell = toggleGrid.createEl('div');
+    tagsCell.style.cssText =
+      'border-radius:8px;background:var(--background-secondary);' +
+      'border:1px solid var(--background-modifier-border);overflow:hidden;';
+    new Setting(tagsCell)
       .setName('同步标签')
-      .setDesc('将小红书话题标签写入笔记 frontmatter')
-      .addToggle(toggle => toggle
+      .setDesc('写入 frontmatter')
+      .addToggle(t => t
         .setValue(this.plugin.settings.syncTags)
         .onChange(async v => {
           this.plugin.settings.syncTags = v;
@@ -284,16 +312,21 @@ class RedbookPullSettingTab extends PluginSettingTab {
           this.plugin.rebuildEngine();
         }));
 
-    new Setting(containerEl)
-      .setName('同步专辑（收藏）')
-      .setDesc('将收藏按专辑分组到子目录，专辑完成后再同步未分类收藏')
-      .addToggle(toggle => toggle
+    const albumsCell = toggleGrid.createEl('div');
+    albumsCell.style.cssText =
+      'border-radius:8px;background:var(--background-secondary);' +
+      'border:1px solid var(--background-modifier-border);overflow:hidden;';
+    new Setting(albumsCell)
+      .setName('同步专辑')
+      .setDesc('收藏按专辑分目录')
+      .addToggle(t => t
         .setValue(this.plugin.settings.syncAlbums)
         .onChange(async v => {
           this.plugin.settings.syncAlbums = v;
           await this.plugin.saveSettings();
         }));
 
+    // 定时自动同步
     new Setting(containerEl)
       .setName('定时自动同步')
       .setDesc('后台按固定间隔同步，遇限流或登录失效时自动关闭')
@@ -340,7 +373,14 @@ class RedbookPullSettingTab extends PluginSettingTab {
         }));
 
     if (this.plugin.settings.enableAiClassify) {
-      new Setting(containerEl)
+      // API 配置收进一个缩进卡片
+      const apiCard = containerEl.createEl('div');
+      apiCard.style.cssText =
+        'margin:4px 0 8px 0;padding:4px 0 4px 0;border-radius:8px;' +
+        'background:var(--background-secondary);' +
+        'border:1px solid var(--background-modifier-border);overflow:hidden;';
+
+      new Setting(apiCard)
         .setName('API Key')
         .addText(text => {
           text.inputEl.type = 'password';
@@ -352,9 +392,9 @@ class RedbookPullSettingTab extends PluginSettingTab {
             });
         });
 
-      new Setting(containerEl)
-        .setName('API Base URL')
-        .setDesc('OpenAI 兼容地址，需含 /v1，例如 https://api.openai.com/v1')
+      new Setting(apiCard)
+        .setName('Base URL')
+        .setDesc('需含 /v1，如 https://api.openai.com/v1')
         .addText(text => text
           .setPlaceholder('https://api.openai.com/v1')
           .setValue(this.plugin.settings.openaiBaseUrl)
@@ -363,7 +403,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }));
 
-      new Setting(containerEl)
+      new Setting(apiCard)
         .setName('模型')
         .addText(text => text
           .setPlaceholder('gpt-4o-mini')
@@ -373,7 +413,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }));
 
-      const testSetting = new Setting(containerEl)
+      const testSetting = new Setting(apiCard)
         .setName('测试连接')
         .setDesc('验证 API Key 和模型是否可用')
         .addButton(btn => btn
@@ -475,8 +515,10 @@ class RedbookPullSettingTab extends PluginSettingTab {
           'border:1px solid var(--background-modifier-border);' +
           'display:flex;align-items:center;justify-content:space-between;gap:6px;';
         const info = card.createEl('div');
+        info.style.cssText = 'min-width:0;';
         const nameEl = info.createEl('div', { text: `「${kw}」` });
-        nameEl.style.cssText = 'font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        nameEl.style.cssText =
+          'font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
         const statusEl = info.createEl('div', {
           text: allDone ? `${count} 篇 · 已全部同步` : `${count} 篇`,
         });
@@ -496,78 +538,92 @@ class RedbookPullSettingTab extends PluginSettingTab {
       }
     }
 
-    new Setting(containerEl)
-      .setName('排序依据')
-      .addDropdown(dd => {
-        for (const [key, label] of Object.entries(SEARCH_SORT_LABELS)) {
-          dd.addOption(key, label);
-        }
-        dd.setValue(this.plugin.settings.searchSort);
-        dd.onChange(async v => {
-          this.plugin.settings.searchSort = v as SearchSort;
-          await this.plugin.saveSettings();
-        });
-      });
+    // 搜索筛选：3×2 紧凑 filter 格栅
+    const FILTERS: { label: string; options: string[]; get: () => string; set: (v: string) => Promise<void> }[] = [
+      {
+        label: '排序依据',
+        options: Object.keys(SEARCH_SORT_LABELS),
+        get: () => this.plugin.settings.searchSort,
+        set: async v => { this.plugin.settings.searchSort = v as SearchSort; await this.plugin.saveSettings(); },
+      },
+      {
+        label: '笔记类型',
+        options: ['不限', '视频', '图文'],
+        get: () => this.plugin.settings.searchNoteType,
+        set: async v => { this.plugin.settings.searchNoteType = v as SearchNoteType; await this.plugin.saveSettings(); },
+      },
+      {
+        label: '发布时间',
+        options: ['不限', '一天内', '一周内', '半年内'],
+        get: () => this.plugin.settings.searchTimeFilter,
+        set: async v => { this.plugin.settings.searchTimeFilter = v as SearchTimeFilter; await this.plugin.saveSettings(); },
+      },
+      {
+        label: '搜索范围',
+        options: ['不限', '已看过', '未看过', '已关注'],
+        get: () => this.plugin.settings.searchRangeFilter,
+        set: async v => { this.plugin.settings.searchRangeFilter = v as SearchRangeFilter; await this.plugin.saveSettings(); },
+      },
+      {
+        label: '位置距离',
+        options: ['不限', '同城', '附近'],
+        get: () => this.plugin.settings.searchPosFilter,
+        set: async v => { this.plugin.settings.searchPosFilter = v as SearchPosFilter; await this.plugin.saveSettings(); },
+      },
+    ];
 
-    new Setting(containerEl)
-      .setName('笔记类型')
-      .addDropdown(dd => {
-        for (const v of ['不限', '视频', '图文'] as SearchNoteType[]) dd.addOption(v, v);
-        dd.setValue(this.plugin.settings.searchNoteType);
-        dd.onChange(async v => {
-          this.plugin.settings.searchNoteType = v as SearchNoteType;
-          await this.plugin.saveSettings();
-        });
-      });
+    const filterGrid = containerEl.createEl('div');
+    filterGrid.style.cssText =
+      'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0;';
 
-    new Setting(containerEl)
-      .setName('发布时间')
-      .addDropdown(dd => {
-        for (const v of ['不限', '一天内', '一周内', '半年内'] as SearchTimeFilter[]) dd.addOption(v, v);
-        dd.setValue(this.plugin.settings.searchTimeFilter);
-        dd.onChange(async v => {
-          this.plugin.settings.searchTimeFilter = v as SearchTimeFilter;
-          await this.plugin.saveSettings();
-        });
-      });
+    for (const f of FILTERS) {
+      const cell = filterGrid.createEl('div');
+      cell.style.cssText =
+        'padding:10px 12px;border-radius:8px;background:var(--background-secondary);' +
+        'border:1px solid var(--background-modifier-border);';
+      cell.createEl('div', { text: f.label }).style.cssText =
+        'font-size:11px;color:var(--text-muted);margin-bottom:5px;';
+      const sel = cell.createEl('select') as HTMLSelectElement;
+      sel.style.cssText =
+        'width:100%;background:var(--background-primary);color:var(--text-normal);' +
+        'border:1px solid var(--background-modifier-border);border-radius:4px;' +
+        'padding:3px 6px;font-size:13px;cursor:pointer;';
+      for (const opt of f.options) {
+        const displayLabel = f.label === '排序依据'
+          ? (SEARCH_SORT_LABELS as Record<string, string>)[opt] ?? opt
+          : opt;
+        const o = sel.createEl('option', { text: displayLabel, value: opt }) as HTMLOptionElement;
+        if (opt === f.get()) o.selected = true;
+      }
+      sel.addEventListener('change', () => f.set(sel.value));
+    }
 
-    new Setting(containerEl)
-      .setName('搜索范围')
-      .addDropdown(dd => {
-        for (const v of ['不限', '已看过', '未看过', '已关注'] as SearchRangeFilter[]) dd.addOption(v, v);
-        dd.setValue(this.plugin.settings.searchRangeFilter);
-        dd.onChange(async v => {
-          this.plugin.settings.searchRangeFilter = v as SearchRangeFilter;
-          await this.plugin.saveSettings();
-        });
-      });
+    // 每次搜索条数：单独一个小卡片补齐第 6 格
+    const batchSearchCell = filterGrid.createEl('div');
+    batchSearchCell.style.cssText =
+      'padding:10px 12px;border-radius:8px;background:var(--background-secondary);' +
+      'border:1px solid var(--background-modifier-border);';
+    batchSearchCell.createEl('div', { text: '每次条数' }).style.cssText =
+      'font-size:11px;color:var(--text-muted);margin-bottom:5px;';
+    batchSearchCell.createEl('div', { text: 'API 每页固定 20 条' }).style.cssText =
+      'font-size:10px;color:var(--text-faint);margin-bottom:5px;';
+    const batchSearchInput = batchSearchCell.createEl('input') as HTMLInputElement;
+    batchSearchInput.type = 'number';
+    batchSearchInput.min = '1'; batchSearchInput.max = '100';
+    batchSearchInput.value = String(this.plugin.settings.searchBatchSize);
+    batchSearchInput.style.cssText =
+      'width:72px;padding:3px 6px;border-radius:4px;font-size:13px;' +
+      'border:1px solid var(--background-modifier-border);' +
+      'background:var(--background-primary);color:var(--text-normal);';
+    batchSearchInput.addEventListener('change', async () => {
+      const n = parseInt(batchSearchInput.value);
+      if (!isNaN(n) && n >= 1 && n <= 100) {
+        this.plugin.settings.searchBatchSize = n;
+        await this.plugin.saveSettings();
+      }
+    });
 
-    new Setting(containerEl)
-      .setName('位置距离')
-      .addDropdown(dd => {
-        for (const v of ['不限', '同城', '附近'] as SearchPosFilter[]) dd.addOption(v, v);
-        dd.setValue(this.plugin.settings.searchPosFilter);
-        dd.onChange(async v => {
-          this.plugin.settings.searchPosFilter = v as SearchPosFilter;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName('每次搜索条数')
-      .setDesc('每次同步周期最多写入的笔记数（API 固定每页 20 条）')
-      .addText(text => {
-        text.inputEl.style.width = '64px';
-        text.setValue(String(this.plugin.settings.searchBatchSize))
-          .onChange(async v => {
-            const n = parseInt(v);
-            if (!isNaN(n) && n >= 1 && n <= 100) {
-              this.plugin.settings.searchBatchSize = n;
-              await this.plugin.saveSettings();
-            }
-          });
-      });
-
+    // 定时自动搜索
     new Setting(containerEl)
       .setName('定时自动搜索')
       .setDesc('按设定间隔自动执行关键词搜索同步')
