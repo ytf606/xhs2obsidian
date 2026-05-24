@@ -153,14 +153,29 @@ class RedbookPullSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    // ── 登录状态 ──────────────────────────────────────────────
+    const section = (title: string, desc?: string) => {
+      const wrap = containerEl.createEl('div');
+      wrap.style.cssText =
+        'margin:28px 0 2px 0;padding-bottom:10px;' +
+        'border-bottom:2px solid var(--background-modifier-border);';
+      const h = wrap.createEl('h2', { text: title });
+      h.style.cssText = 'margin:0 0 2px 0;font-size:15px;font-weight:600;';
+      if (desc) {
+        const d = wrap.createEl('p', { text: desc });
+        d.style.cssText = 'margin:0;font-size:12px;color:var(--text-muted);';
+      }
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    // 1. 账号设置
+    // ═══════════════════════════════════════════════════════════
+    section('账号设置');
+
     const isLoggedIn = !!this.plugin.settings.a1Cookie;
     const displayName = this.plugin.settings.userName;
     const loginSetting = new Setting(containerEl)
-      .setName('小红书登录状态')
-      .setDesc(isLoggedIn
-        ? (displayName ? `已登录：${displayName}` : '已登录')
-        : '未登录');
+      .setName(isLoggedIn ? `已登录：${displayName || '未知用户'}` : '未登录小红书')
+      .setDesc(isLoggedIn ? 'Cookie 有效期约 30–90 天，过期后重新登录即可' : '登录后才能同步内容');
 
     if (isLoggedIn) {
       loginSetting.addButton(btn => btn
@@ -173,26 +188,33 @@ class RedbookPullSettingTab extends PluginSettingTab {
         .onClick(() => this.openLogin()));
     }
 
-    // ── 各目标同步数量 ─────────────────────────────────────────
+    // 三栏数据卡片
+    const statsGrid = containerEl.createEl('div');
+    statsGrid.style.cssText =
+      'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0 4px 0;';
     for (const [key, label] of Object.entries(SYNC_TARGET_LABELS) as [SyncTarget, string][]) {
       const count = this.plugin.settings.syncedIds[key]?.length ?? 0;
       const allSynced = this.plugin.settings.allSynced[key];
-
-      const s = new Setting(containerEl)
-        .setName(`${label}：${count} 条`);
-
+      const card = statsGrid.createEl('div');
+      card.style.cssText =
+        'padding:12px 16px;border-radius:8px;' +
+        'background:var(--background-secondary);' +
+        'border:1px solid var(--background-modifier-border);';
+      const n = card.createEl('div', { text: String(count) });
+      n.style.cssText = 'font-size:22px;font-weight:700;line-height:1.1;';
+      const lbl = card.createEl('div', { text: label });
+      lbl.style.cssText = 'font-size:12px;color:var(--text-muted);margin-top:3px;';
       if (allSynced) {
-        s.setDesc('历史数据同步完成，开始增量同步');
-        s.descEl.style.color = 'var(--color-green)';
+        const badge = card.createEl('div', { text: '✓ 已全部同步' });
+        badge.style.cssText = 'font-size:11px;color:var(--color-green);margin-top:4px;';
       }
     }
 
-    // ── 清除缓存 ──────────────────────────────────────────────
     new Setting(containerEl)
       .setName('清除同步缓存')
-      .setDesc('重置已同步记录，不会删除已有文件，重新同步时会覆盖更新')
+      .setDesc('重置已同步记录，不会删除已有文件，下次同步会重新拉取全部内容')
       .addButton(btn => btn
-        .setButtonText('清除缓存并重新同步')
+        .setButtonText('清除缓存')
         .setWarning()
         .onClick(async () => {
           for (const key of Object.keys(SYNC_TARGET_LABELS) as SyncTarget[]) {
@@ -201,16 +223,18 @@ class RedbookPullSettingTab extends PluginSettingTab {
             this.plugin.settings.allSynced[key] = false;
           }
           await this.plugin.saveSettings();
-          new Notice('Redbook Pull：同步缓存已清除');
+          new Notice('XHS Sync：同步缓存已清除');
           this.display();
         }));
 
-    // ── Vault 配置 ────────────────────────────────────────────
-    containerEl.createEl('h3', { text: 'Vault 配置' });
+    // ═══════════════════════════════════════════════════════════
+    // 2. 同步设置
+    // ═══════════════════════════════════════════════════════════
+    section('同步设置');
 
     new Setting(containerEl)
-      .setName('根目录名')
-      .setDesc('同步内容存储在 Vault 中的此目录下')
+      .setName('存储目录')
+      .setDesc('同步内容在 Vault 中的根目录名')
       .addText(text => text
         .setPlaceholder('RedNote')
         .setValue(this.plugin.settings.rootFolder)
@@ -220,53 +244,9 @@ class RedbookPullSettingTab extends PluginSettingTab {
           this.plugin.rebuildEngine();
         }));
 
-    // ── 同步配置 ──────────────────────────────────────────────
-    containerEl.createEl('h3', { text: '同步配置' });
-
-    new Setting(containerEl)
-      .setName('定时自动同步')
-      .setDesc('开启后按设定间隔自动同步，遇到限流或登录失效会自动关闭')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.autoSyncEnabled)
-        .onChange(async v => {
-          this.plugin.settings.autoSyncEnabled = v;
-          await this.plugin.saveSettings();
-          v ? this.plugin.startAutoSync() : this.plugin.stopAutoSync();
-          this.display();
-        }));
-
-    if (this.plugin.settings.autoSyncEnabled) {
-      new Setting(containerEl)
-        .setName('同步间隔（分钟）')
-        .setDesc('每隔多少分钟自动同步一次（最小 5 分钟，避免触发小红书频率限制）')
-        .addText(text => text
-          .setValue(String(this.plugin.settings.syncIntervalMinutes))
-          .onChange(async v => {
-            const n = parseInt(v);
-            if (!isNaN(n) && n >= 5) {
-              this.plugin.settings.syncIntervalMinutes = n;
-              await this.plugin.saveSettings();
-              this.plugin.startAutoSync();
-            }
-          }));
-    }
-
-    new Setting(containerEl)
-      .setName('每批同步数量')
-      .setDesc('每次同步的帖子数量（5-10 之间，避免触发小红书频率限制）')
-      .addText(text => text
-        .setValue(String(this.plugin.settings.syncBatchSize))
-        .onChange(async v => {
-          const n = parseInt(v);
-          if (!isNaN(n) && n >= 1 && n <= 20) {
-            this.plugin.settings.syncBatchSize = n;
-            await this.plugin.saveSettings();
-          }
-        }));
-
     new Setting(containerEl)
       .setName('同步内容')
-      .setDesc('同一时间只同步一种类型，减少请求量')
+      .setDesc('Ribbon 图标和自动同步触发的内容类型')
       .addDropdown(dd => {
         for (const [key, label] of Object.entries(SYNC_TARGET_LABELS)) {
           dd.addOption(key, label);
@@ -276,6 +256,21 @@ class RedbookPullSettingTab extends PluginSettingTab {
           this.plugin.settings.syncTarget = v as SyncTarget;
           await this.plugin.saveSettings();
         });
+      });
+
+    new Setting(containerEl)
+      .setName('每批同步数量')
+      .setDesc('每次 API 请求拉取的条目数，建议 5–10，过大容易触发限流')
+      .addText(text => {
+        text.inputEl.style.width = '64px';
+        text.setValue(String(this.plugin.settings.syncBatchSize))
+          .onChange(async v => {
+            const n = parseInt(v);
+            if (!isNaN(n) && n >= 1 && n <= 20) {
+              this.plugin.settings.syncBatchSize = n;
+              await this.plugin.saveSettings();
+            }
+          });
       });
 
     new Setting(containerEl)
@@ -291,7 +286,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('同步专辑（收藏）')
-      .setDesc('先按专辑分目录同步收藏，每个专辑一个子目录；专辑同步完成后再同步未分类的收藏')
+      .setDesc('将收藏按专辑分组到子目录，专辑完成后再同步未分类收藏')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.syncAlbums)
         .onChange(async v => {
@@ -299,12 +294,43 @@ class RedbookPullSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    // ── AI 分类 ────────────────────────────────────────────────
-    containerEl.createEl('h3', { text: 'AI 分类（可选）' });
+    new Setting(containerEl)
+      .setName('定时自动同步')
+      .setDesc('后台按固定间隔同步，遇限流或登录失效时自动关闭')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.autoSyncEnabled)
+        .onChange(async v => {
+          this.plugin.settings.autoSyncEnabled = v;
+          await this.plugin.saveSettings();
+          v ? this.plugin.startAutoSync() : this.plugin.stopAutoSync();
+          this.display();
+        }));
+
+    if (this.plugin.settings.autoSyncEnabled) {
+      new Setting(containerEl)
+        .setName('同步间隔（分钟）')
+        .setDesc('最小 5 分钟')
+        .addText(text => {
+          text.inputEl.style.width = '64px';
+          text.setValue(String(this.plugin.settings.syncIntervalMinutes))
+            .onChange(async v => {
+              const n = parseInt(v);
+              if (!isNaN(n) && n >= 5) {
+                this.plugin.settings.syncIntervalMinutes = n;
+                await this.plugin.saveSettings();
+                this.plugin.startAutoSync();
+              }
+            });
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 3. AI 分类
+    // ═══════════════════════════════════════════════════════════
+    section('AI 分类', '可选：同步时自动将笔记归入指定分类目录');
 
     new Setting(containerEl)
       .setName('启用 AI 分类')
-      .setDesc('同步时用 AI 自动将笔记归入指定分类子目录')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.enableAiClassify)
         .onChange(async v => {
@@ -316,18 +342,19 @@ class RedbookPullSettingTab extends PluginSettingTab {
     if (this.plugin.settings.enableAiClassify) {
       new Setting(containerEl)
         .setName('API Key')
-        .addText(text => text
-          .setPlaceholder('sk-...')
-          .setValue(this.plugin.settings.openaiApiKey)
-          .onChange(async v => {
-            this.plugin.settings.openaiApiKey = v.trim();
-            await this.plugin.saveSettings();
-          }))
-        .then(s => { (s.controlEl.querySelector('input') as HTMLInputElement).type = 'password'; });
+        .addText(text => {
+          text.inputEl.type = 'password';
+          text.setPlaceholder('sk-...')
+            .setValue(this.plugin.settings.openaiApiKey)
+            .onChange(async v => {
+              this.plugin.settings.openaiApiKey = v.trim();
+              await this.plugin.saveSettings();
+            });
+        });
 
       new Setting(containerEl)
         .setName('API Base URL')
-        .setDesc('OpenAI 兼容接口地址，必须包含 /v1，例如 https://api.openai.com/v1、https://openrouter.ai/api/v1')
+        .setDesc('OpenAI 兼容地址，需含 /v1，例如 https://api.openai.com/v1')
         .addText(text => text
           .setPlaceholder('https://api.openai.com/v1')
           .setValue(this.plugin.settings.openaiBaseUrl)
@@ -347,30 +374,27 @@ class RedbookPullSettingTab extends PluginSettingTab {
           }));
 
       const testSetting = new Setting(containerEl)
-        .setName('测试 AI 配置')
-        .setDesc('发送一个测试请求验证 API Key 和模型是否能用')
+        .setName('测试连接')
+        .setDesc('验证 API Key 和模型是否可用')
         .addButton(btn => btn
-          .setButtonText('测试连接')
+          .setButtonText('测试')
           .onClick(async () => {
             btn.setDisabled(true);
-            btn.setButtonText('测试中...');
+            btn.setButtonText('测试中…');
             const { ok, message } = await testAiConfig(
               this.plugin.settings.openaiApiKey,
               this.plugin.settings.openaiBaseUrl,
               this.plugin.settings.openaiModel,
             );
             btn.setDisabled(false);
-            btn.setButtonText('测试连接');
+            btn.setButtonText('测试');
             testSetting.setDesc(message);
             testSetting.descEl.style.color = ok ? 'var(--color-green)' : 'var(--text-error)';
           }));
-    }
 
-    // 分类列表（启用时显示）
-    if (this.plugin.settings.enableAiClassify) {
-      const catSetting = new Setting(containerEl)
+      new Setting(containerEl)
         .setName('分类列表')
-        .setDesc('输入分类名后按回车添加，点击 × 删除，或从专辑目录一键加载')
+        .setDesc('输入分类名按回车添加；点击 × 删除')
         .addButton(btn => btn
           .setButtonText('从专辑目录加载')
           .onClick(async () => {
@@ -383,131 +407,94 @@ class RedbookPullSettingTab extends PluginSettingTab {
               }
             }
             await this.plugin.saveSettings();
-            if (added) new Notice(`Redbook Pull：已加载 ${added} 个分类`);
+            if (added) new Notice(`XHS Sync：已加载 ${added} 个分类`);
             this.display();
           }));
 
-      // Chips row
-      const chipsEl = containerEl.createEl('div');
-      chipsEl.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 8px 0;';
-      for (const cat of this.plugin.settings.aiCategories) {
-        const chip = chipsEl.createEl('span');
-        chip.style.cssText =
-          'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;' +
-          'background:var(--background-modifier-border);font-size:12px;';
-        chip.createSpan({ text: cat });
-        const rm = chip.createEl('button', { text: '×' });
-        rm.style.cssText =
-          'background:none;border:none;cursor:pointer;padding:0 0 0 2px;' +
-          'color:var(--text-muted);font-size:14px;line-height:1;';
-        rm.onclick = async () => {
+      this.renderChips(
+        containerEl,
+        this.plugin.settings.aiCategories,
+        async (item) => {
           this.plugin.settings.aiCategories =
-            this.plugin.settings.aiCategories.filter(c => c !== cat);
+            this.plugin.settings.aiCategories.filter(c => c !== item);
+          await this.plugin.saveSettings();
+          this.display();
+        },
+        async (item) => {
+          if (!this.plugin.settings.aiCategories.includes(item)) {
+            this.plugin.settings.aiCategories.push(item);
+            await this.plugin.saveSettings();
+            this.display();
+          }
+        },
+        '输入分类名，按回车添加',
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 4. 关键词同步
+    // ═══════════════════════════════════════════════════════════
+    section('关键词同步', '按关键词搜索小红书并同步匹配笔记');
+
+    new Setting(containerEl)
+      .setName('关键词列表')
+      .setDesc('输入关键词按回车添加；点击 × 删除');
+
+    this.renderChips(
+      containerEl,
+      this.plugin.settings.searchKeywords,
+      async (item) => {
+        this.plugin.settings.searchKeywords =
+          this.plugin.settings.searchKeywords.filter(k => k !== item);
+        await this.plugin.saveSettings();
+        this.display();
+      },
+      async (item) => {
+        if (!this.plugin.settings.searchKeywords.includes(item)) {
+          this.plugin.settings.searchKeywords.push(item);
+          await this.plugin.saveSettings();
+          this.display();
+        }
+      },
+      '输入关键词，按回车添加',
+    );
+
+    // 关键词状态卡片
+    if (this.plugin.settings.searchKeywords.length > 0) {
+      const kwGrid = containerEl.createEl('div');
+      kwGrid.style.cssText =
+        'display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));' +
+        'gap:6px;margin:4px 0 12px 0;';
+      for (const kw of this.plugin.settings.searchKeywords) {
+        const count = this.plugin.settings.searchedNoteIds[kw]?.length ?? 0;
+        const allDone = this.plugin.settings.searchAllSynced[kw];
+        const card = kwGrid.createEl('div');
+        card.style.cssText =
+          'padding:8px 12px;border-radius:6px;' +
+          'background:var(--background-secondary);' +
+          'border:1px solid var(--background-modifier-border);' +
+          'display:flex;align-items:center;justify-content:space-between;gap:6px;';
+        const info = card.createEl('div');
+        const nameEl = info.createEl('div', { text: `「${kw}」` });
+        nameEl.style.cssText = 'font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        const statusEl = info.createEl('div', {
+          text: allDone ? `${count} 篇 · 已全部同步` : `${count} 篇`,
+        });
+        statusEl.style.cssText =
+          `font-size:11px;margin-top:2px;color:${allDone ? 'var(--color-green)' : 'var(--text-muted)'};`;
+        const resetBtn = card.createEl('button', { text: '重置' });
+        resetBtn.style.cssText =
+          'flex-shrink:0;font-size:11px;padding:2px 8px;cursor:pointer;border-radius:4px;' +
+          'background:var(--background-modifier-border);border:none;color:var(--text-normal);';
+        resetBtn.onclick = async () => {
+          this.plugin.settings.searchPages[kw] = 1;
+          this.plugin.settings.searchedNoteIds[kw] = [];
+          this.plugin.settings.searchAllSynced[kw] = false;
           await this.plugin.saveSettings();
           this.display();
         };
       }
-
-      // Input for new category
-      const inputEl = containerEl.createEl('input') as HTMLInputElement;
-      inputEl.type = 'text';
-      inputEl.placeholder = '输入分类名，按回车添加';
-      inputEl.style.cssText =
-        'width:100%;padding:6px 10px;border:1px solid var(--background-modifier-border);' +
-        'border-radius:4px;background:var(--background-primary);color:var(--text-normal);' +
-        'font-size:14px;box-sizing:border-box;margin-bottom:8px;';
-      inputEl.addEventListener('keydown', async (e: KeyboardEvent) => {
-        if (e.key !== 'Enter') return;
-        const val = inputEl.value.trim();
-        if (val && !this.plugin.settings.aiCategories.includes(val)) {
-          this.plugin.settings.aiCategories.push(val);
-          await this.plugin.saveSettings();
-          this.display();
-        }
-      });
     }
-
-    // ── 关键词搜索 ─────────────────────────────────────────────
-    containerEl.createEl('h3', { text: '关键词搜索' });
-
-    new Setting(containerEl)
-      .setName('立即执行搜索同步')
-      .setDesc('重置各关键词同步状态后立即拉取，已下载内容不会重复同步')
-      .addButton(btn => btn
-        .setButtonText('立即拉取')
-        .setCta()
-        .onClick(async () => {
-          for (const kw of this.plugin.settings.searchKeywords) {
-            this.plugin.settings.searchAllSynced[kw] = false;
-            this.plugin.settings.searchPages[kw] = 1;
-          }
-          await this.plugin.saveSettings();
-          this.plugin.engine.syncSearch();
-        }));
-
-    // 每个关键词的同步状态
-    for (const kw of this.plugin.settings.searchKeywords) {
-      const count = this.plugin.settings.searchedNoteIds[kw]?.length ?? 0;
-      const allDone = this.plugin.settings.searchAllSynced[kw];
-      const s = new Setting(containerEl)
-        .setName(`「${kw}」：${count} 篇`)
-        .addButton(btn => btn
-          .setButtonText('重置')
-          .setWarning()
-          .onClick(async () => {
-            this.plugin.settings.searchPages[kw] = 1;
-            this.plugin.settings.searchedNoteIds[kw] = [];
-            this.plugin.settings.searchAllSynced[kw] = false;
-            await this.plugin.saveSettings();
-            this.display();
-          }));
-      if (allDone) {
-        s.setDesc('已全部同步');
-        s.descEl.style.color = 'var(--color-green)';
-      }
-    }
-
-    // 关键词输入区
-    new Setting(containerEl)
-      .setName('关键词列表')
-      .setDesc('输入关键词按回车添加，点击 × 删除');
-
-    const kwChipsEl = containerEl.createEl('div');
-    kwChipsEl.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 8px 0;';
-    for (const kw of this.plugin.settings.searchKeywords) {
-      const chip = kwChipsEl.createEl('span');
-      chip.style.cssText =
-        'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;' +
-        'background:var(--background-modifier-border);font-size:12px;';
-      chip.createSpan({ text: kw });
-      const rm = chip.createEl('button', { text: '×' });
-      rm.style.cssText =
-        'background:none;border:none;cursor:pointer;padding:0 0 0 2px;' +
-        'color:var(--text-muted);font-size:14px;line-height:1;';
-      rm.onclick = async () => {
-        this.plugin.settings.searchKeywords =
-          this.plugin.settings.searchKeywords.filter(k => k !== kw);
-        await this.plugin.saveSettings();
-        this.display();
-      };
-    }
-
-    const kwInputEl = containerEl.createEl('input') as HTMLInputElement;
-    kwInputEl.type = 'text';
-    kwInputEl.placeholder = '输入关键词，按回车添加';
-    kwInputEl.style.cssText =
-      'width:100%;padding:6px 10px;border:1px solid var(--background-modifier-border);' +
-      'border-radius:4px;background:var(--background-primary);color:var(--text-normal);' +
-      'font-size:14px;box-sizing:border-box;margin-bottom:8px;';
-    kwInputEl.addEventListener('keydown', async (e: KeyboardEvent) => {
-      if (e.key !== 'Enter') return;
-      const val = kwInputEl.value.trim();
-      if (val && !this.plugin.settings.searchKeywords.includes(val)) {
-        this.plugin.settings.searchKeywords.push(val);
-        await this.plugin.saveSettings();
-        this.display();
-      }
-    });
 
     new Setting(containerEl)
       .setName('排序依据')
@@ -568,20 +555,22 @@ class RedbookPullSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('每次搜索条数')
-      .setDesc('每次同步周期最多写入的笔记数（API 固定每页 20 条，设 5 只取前 5 条，设 30 则跨两页取 10+20）')
-      .addText(text => text
-        .setValue(String(this.plugin.settings.searchBatchSize))
-        .onChange(async v => {
-          const n = parseInt(v);
-          if (!isNaN(n) && n >= 1 && n <= 100) {
-            this.plugin.settings.searchBatchSize = n;
-            await this.plugin.saveSettings();
-          }
-        }));
+      .setDesc('每次同步周期最多写入的笔记数（API 固定每页 20 条）')
+      .addText(text => {
+        text.inputEl.style.width = '64px';
+        text.setValue(String(this.plugin.settings.searchBatchSize))
+          .onChange(async v => {
+            const n = parseInt(v);
+            if (!isNaN(n) && n >= 1 && n <= 100) {
+              this.plugin.settings.searchBatchSize = n;
+              await this.plugin.saveSettings();
+            }
+          });
+      });
 
     new Setting(containerEl)
       .setName('定时自动搜索')
-      .setDesc('按设定间隔自动执行关键词搜索')
+      .setDesc('按设定间隔自动执行关键词搜索同步')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.autoSearchEnabled)
         .onChange(async v => {
@@ -595,17 +584,69 @@ class RedbookPullSettingTab extends PluginSettingTab {
       new Setting(containerEl)
         .setName('搜索间隔（分钟）')
         .setDesc('最小 30 分钟，避免触发小红书封控')
-        .addText(text => text
-          .setValue(String(this.plugin.settings.searchIntervalMinutes))
-          .onChange(async v => {
-            const n = parseInt(v);
-            if (!isNaN(n) && n >= 30) {
-              this.plugin.settings.searchIntervalMinutes = n;
-              await this.plugin.saveSettings();
-              this.plugin.startAutoSearch();
-            }
-          }));
+        .addText(text => {
+          text.inputEl.style.width = '64px';
+          text.setValue(String(this.plugin.settings.searchIntervalMinutes))
+            .onChange(async v => {
+              const n = parseInt(v);
+              if (!isNaN(n) && n >= 30) {
+                this.plugin.settings.searchIntervalMinutes = n;
+                await this.plugin.saveSettings();
+                this.plugin.startAutoSearch();
+              }
+            });
+        });
     }
+
+    new Setting(containerEl)
+      .setName('立即执行搜索同步')
+      .setDesc('重置各关键词同步状态后立即拉取，已下载内容不会重复同步')
+      .addButton(btn => btn
+        .setButtonText('立即搜索')
+        .setCta()
+        .onClick(async () => {
+          for (const kw of this.plugin.settings.searchKeywords) {
+            this.plugin.settings.searchAllSynced[kw] = false;
+            this.plugin.settings.searchPages[kw] = 1;
+          }
+          await this.plugin.saveSettings();
+          this.plugin.engine.syncSearch();
+        }));
+  }
+
+  private renderChips(
+    containerEl: HTMLElement,
+    items: string[],
+    onRemove: (item: string) => Promise<void>,
+    onAdd: (item: string) => Promise<void>,
+    placeholder: string,
+  ): void {
+    const chipsEl = containerEl.createEl('div');
+    chipsEl.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 6px 0;';
+    for (const item of items) {
+      const chip = chipsEl.createEl('span');
+      chip.style.cssText =
+        'display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;' +
+        'background:var(--background-modifier-border);font-size:12px;';
+      chip.createSpan({ text: item });
+      const rm = chip.createEl('button', { text: '×' });
+      rm.style.cssText =
+        'background:none;border:none;cursor:pointer;padding:0 0 0 2px;' +
+        'color:var(--text-muted);font-size:14px;line-height:1;';
+      rm.onclick = () => onRemove(item);
+    }
+    const inputEl = containerEl.createEl('input') as HTMLInputElement;
+    inputEl.type = 'text';
+    inputEl.placeholder = placeholder;
+    inputEl.style.cssText =
+      'width:100%;padding:6px 10px;margin-bottom:4px;box-sizing:border-box;' +
+      'border:1px solid var(--background-modifier-border);border-radius:4px;' +
+      'background:var(--background-primary);color:var(--text-normal);font-size:14px;';
+    inputEl.addEventListener('keydown', async (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+      const val = inputEl.value.trim();
+      if (val) await onAdd(val);
+    });
   }
 
   private openLogin(): void {
