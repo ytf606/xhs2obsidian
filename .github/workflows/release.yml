@@ -41,4 +41,33 @@ jobs:
             main.js
             manifest.json
             styles.css
+          body: |
+            ## 安装方法
+
+            1. 下载下方的 `xhs2obsidian-${{ github.ref_name }}.zip`
+            2. 解压后将文件夹复制到 Vault 的 `.obsidian/plugins/` 目录
+            3. Obsidian → 设置 → 第三方插件 → 刷新列表 → 启用 **XHS Sync**
+
+            或单独下载 `main.js`、`manifest.json`、`styles.css` 放入 `.obsidian/plugins/xhs2obsidian/`
+
+            ---
+
+            ## 功能
+
+            - 📚 同步小红书**收藏、点赞、个人帖子**到 Obsidian Markdown 笔记
+            - 🔍 **关键词搜索**同步：按关键词抓取匹配笔记
+            - 🖼️ **图片/视频本地下载**：每篇笔记独立媒体文件夹，离线可查
+            - 🤖 **AI 自动分类**：接入 OpenAI 兼容 API，自动归类到自定义文件夹
+            - 🔄 **增量同步**：记录已同步 ID，重复运行只拉取新内容
+            - ⏱️ **定时自动同步**：后台按间隔自动同步，最低 5 分钟
+            - 📁 **专辑目录**：收藏夹按专辑自动分子目录
+            - 📝 **结构化 Frontmatter**：记录 ID、标签、点赞数、评论数、同步时间
+
+            ---
+
+            ## 注意事项
+
+            - 仅支持 Obsidian **桌面端**（macOS / Windows / Linux）
+            - 首次使用需在内置浏览器中完成一次小红书登录
+            - Cookie 有效期约 30–90 天，过期后重新登录即可
           generate_release_notes: true
