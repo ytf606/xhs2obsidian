@@ -1,5 +1,5 @@
 import { Notice } from 'obsidian';
-import { RedbookPullSettings, SyncTarget, SYNC_TARGET_LABELS, XhsNote, SearchSort } from './types';
+import { RedbookPullSettings, SyncTarget, SYNC_TARGET_LABELS, XhsNote, XhsComment, SearchSort } from './types';
 import { XhsApi } from './xhs-api';
 import { VaultWriter } from './vault-writer';
 import { classifyNote } from './ai-classifier';
@@ -104,7 +104,15 @@ export class SyncEngine {
               logError('[SyncEngine] AI classify error:', e.message);
             }
           }
-          await this.writer.write(note, target, category);
+          let comments: XhsComment[] = [];
+          if (this.settings.enableCommentSync) {
+            try {
+              comments = await this.fetchAllComments(note.id, note.xsecToken, this.settings.commentMaxCount);
+            } catch (e: any) {
+              logError('[SyncEngine] fetchAllComments error:', e.message);
+            }
+          }
+          await this.writer.write(note, target, category, comments);
           this.settings.syncedIds[target].push(listNote.id);
           savedCount++;
         }
@@ -204,7 +212,15 @@ export class SyncEngine {
               } catch (e: any) {
                 logError('[SyncEngine] search fetchNoteDetail error:', e.message);
               }
-              await this.writer.write(note, 'search', keyword);
+              let comments: XhsComment[] = [];
+              if (this.settings.enableSearchCommentSync) {
+                try {
+                  comments = await this.fetchAllComments(note.id, note.xsecToken, this.settings.searchCommentMaxCount);
+                } catch (e: any) {
+                  logError('[SyncEngine] fetchAllComments error:', e.message);
+                }
+              }
+              await this.writer.write(note, 'search', keyword, comments);
               this.settings.searchedNoteIds[keyword].push(listNote.id);
               savedCount++;
               totalSaved++;
@@ -296,7 +312,15 @@ export class SyncEngine {
               } catch (e: any) {
                 logError('[SyncEngine] follow fetchNoteDetail error:', e.message);
               }
-              await this.writer.writeUserNote(note, nickname);
+              let comments: XhsComment[] = [];
+              if (this.settings.enableFollowCommentSync) {
+                try {
+                  comments = await this.fetchAllComments(note.id, note.xsecToken, this.settings.followCommentMaxCount);
+                } catch (e: any) {
+                  logError('[SyncEngine] fetchAllComments error:', e.message);
+                }
+              }
+              await this.writer.write(note, 'user', nickname, comments);
               account.fetchedNoteIds.push(listNote.id);
               savedCount++;
               totalSaved++;
@@ -326,6 +350,67 @@ export class SyncEngine {
     } finally {
       this.syncing = false;
     }
+  }
+
+  private async fetchAllComments(noteId: string, xsecToken: string, maxCount: number): Promise<XhsComment[]> {
+    const MAX = Math.max(1, maxCount);
+    const topLevel: XhsComment[] = [];
+    let totalCount = 0;
+    let cursor = '';
+    let isFirstRequest = true;
+
+    while (totalCount < MAX) {
+      if (!isFirstRequest) {
+        await randomSleep(30000, 300000); // 30s–5min between comment API calls
+      }
+      isFirstRequest = false;
+
+      let pageComments: XhsComment[] = [];
+      let nextCursor = '';
+      let hasMore = false;
+      try {
+        const res = await this.api.fetchComments(noteId, cursor, xsecToken);
+        pageComments = res.comments;
+        nextCursor = res.cursor;
+        hasMore = res.hasMore;
+      } catch (e: any) {
+        logError('[SyncEngine] fetchComments error:', e.message);
+        break;
+      }
+
+      if (pageComments.length === 0) break;
+
+      for (const comment of pageComments) {
+        if (totalCount >= MAX) break;
+        totalCount++;
+
+        // Fetch sub-comments when more exist than the API already embedded
+        if (comment.subCommentCount > comment.subComments.length && totalCount < MAX) {
+          await randomSleep(30000, 300000); // 30s–5min
+          try {
+            const { comments: subs } = await this.api.fetchSubComments(noteId, comment.id, '');
+            const remaining = MAX - totalCount;
+            comment.subComments = subs.slice(0, remaining);
+            totalCount += comment.subComments.length;
+          } catch (e: any) {
+            logError('[SyncEngine] fetchSubComments error:', e.message);
+            totalCount += comment.subComments.length;
+          }
+        } else {
+          const remaining = MAX - totalCount;
+          comment.subComments = comment.subComments.slice(0, remaining);
+          totalCount += comment.subComments.length;
+        }
+
+        topLevel.push(comment);
+      }
+
+      cursor = nextCursor;
+      if (!hasMore) break;
+    }
+
+    log(`[SyncEngine] fetched ${totalCount} comments (${topLevel.length} top-level) for ${noteId}`);
+    return topLevel;
   }
 
   private async fetch(target: SyncTarget, cursor: string | null) {

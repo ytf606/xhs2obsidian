@@ -193,27 +193,80 @@ class RedbookPullSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    const section = (title: string, desc?: string) => {
+    // Each section() call creates a self-contained card (header + body) and returns the body element.
+    // All content for a section is appended to the returned body, so it's visually enclosed.
+    const SECTION_STYLES = [
+      { icon: '👤', color: '#4f8ef7' },   // 账号设置
+      { icon: '🔄', color: '#4caf82' },   // 同步设置
+      { icon: '🤖', color: '#9c6fe8' },   // AI 分类
+      { icon: '🔍', color: '#f4973b' },   // 关键词同步
+      { icon: '📰', color: '#ff2442' },   // 账号订阅
+    ];
+    let sectionIdx = 0;
+    const section = (title: string, desc?: string): HTMLElement => {
+      const isFirst = sectionIdx === 0;
+      const style = SECTION_STYLES[sectionIdx++ % SECTION_STYLES.length];
       const wrap = containerEl.createEl('div');
       wrap.style.cssText =
-        'margin:28px 0 2px 0;padding-bottom:10px;' +
-        'border-bottom:2px solid var(--background-modifier-border);';
-      const h = wrap.createEl('h2', { text: title });
-      h.style.cssText = 'margin:0 0 2px 0;font-size:15px;font-weight:600;';
+        `margin:${isFirst ? '4px' : '24px'} 0 0 0;border-radius:10px;overflow:hidden;` +
+        `border:1px solid var(--background-modifier-border);` +
+        `border-left:4px solid ${style.color};`;
+      const header = wrap.createEl('div');
+      header.style.cssText =
+        'padding:10px 16px;border-bottom:1px solid var(--background-modifier-border);';
+      const row = header.createEl('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;';
+      row.createEl('span', { text: style.icon }).style.cssText = 'font-size:18px;line-height:1;';
+      const h = row.createEl('span', { text: title });
+      h.style.cssText = 'font-size:15px;font-weight:700;color:var(--text-normal);letter-spacing:0.01em;';
       if (desc) {
-        const d = wrap.createEl('p', { text: desc });
-        d.style.cssText = 'margin:0;font-size:12px;color:var(--text-muted);';
+        const d = header.createEl('p', { text: desc });
+        d.style.cssText = 'margin:5px 0 0 26px;font-size:12px;color:var(--text-muted);line-height:1.5;';
       }
+      const body = wrap.createEl('div');
+      body.style.cssText = 'padding:4px 0 8px 0;';
+      return body;
+    };
+
+    // Comment-fetch card: toggle + max-count input. Takes explicit container so it lands inside the right section body.
+    const mkCommentCard = (
+      container: HTMLElement,
+      enabled: boolean,
+      onToggle: (v: boolean) => Promise<void>,
+      maxCount: number,
+      onMaxChange: (n: number) => Promise<void>,
+    ) => {
+      const card = container.createEl('div');
+      card.style.cssText =
+        'margin:4px 16px 4px 16px;border-radius:8px;overflow:hidden;' +
+        'border:1px solid var(--background-modifier-border);';
+      new Setting(card)
+        .setName('💬 抓取评论')
+        .setDesc('每次请求间隔 30 秒–5 分钟，开启后同步耗时显著增加')
+        .addToggle(t => t.setValue(enabled).onChange(onToggle));
+      new Setting(card)
+        .setName('最大评论数')
+        .setDesc('每帖抓取主评论 + 子评论的总上限，默认 100')
+        .addText(text => {
+          text.inputEl.type = 'number';
+          text.inputEl.min = '10';
+          text.inputEl.max = '500';
+          text.inputEl.style.width = '72px';
+          text.setValue(String(maxCount)).onChange(async v => {
+            const n = parseInt(v);
+            if (!isNaN(n) && n >= 10) await onMaxChange(n);
+          });
+        });
     };
 
     // ═══════════════════════════════════════════════════════════
     // 1. 账号设置
     // ═══════════════════════════════════════════════════════════
-    section('账号设置');
+    const acctBody = section('账号设置');
 
     const isLoggedIn = !!this.plugin.settings.a1Cookie;
     const displayName = this.plugin.settings.userName;
-    const loginSetting = new Setting(containerEl)
+    const loginSetting = new Setting(acctBody)
       .setName(isLoggedIn ? `已登录：${displayName || '未知用户'}` : '未登录小红书')
       .setDesc(isLoggedIn ? 'Cookie 有效期约 30–90 天，过期后重新登录即可' : '登录后才能同步内容');
 
@@ -229,9 +282,9 @@ class RedbookPullSettingTab extends PluginSettingTab {
     }
 
     // 三栏数据卡片
-    const statsGrid = containerEl.createEl('div');
+    const statsGrid = acctBody.createEl('div');
     statsGrid.style.cssText =
-      'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0 4px 0;';
+      'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 16px 4px 16px;';
     for (const [key, label] of Object.entries(SYNC_TARGET_LABELS) as [SyncTarget, string][]) {
       const count = this.plugin.settings.syncedIds[key]?.length ?? 0;
       const allSynced = this.plugin.settings.allSynced[key];
@@ -250,7 +303,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
       }
     }
 
-    new Setting(containerEl)
+    new Setting(acctBody)
       .setName('清除同步缓存')
       .setDesc('重置已同步记录，不会删除已有文件，下次同步会重新拉取全部内容')
       .addButton(btn => btn
@@ -270,10 +323,10 @@ class RedbookPullSettingTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════
     // 2. 同步设置
     // ═══════════════════════════════════════════════════════════
-    section('同步设置');
+    const syncBody = section('同步设置');
 
     // 存储目录：全宽
-    new Setting(containerEl)
+    new Setting(syncBody)
       .setName('存储目录')
       .setDesc('同步内容在 Vault 中的根目录名')
       .addText(text => text
@@ -286,8 +339,8 @@ class RedbookPullSettingTab extends PluginSettingTab {
         }));
 
     // 同步内容 + 每批数量：2 列并排
-    const syncRow = containerEl.createEl('div');
-    syncRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0;';
+    const syncRow = syncBody.createEl('div');
+    syncRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 16px;';
 
     const syncTargetCell = syncRow.createEl('div');
     syncTargetCell.style.cssText =
@@ -334,8 +387,8 @@ class RedbookPullSettingTab extends PluginSettingTab {
     });
 
     // 同步标签 + 同步专辑：2 列 toggle 卡片（使用 Setting API）
-    const toggleGrid = containerEl.createEl('div');
-    toggleGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;';
+    const toggleGrid = syncBody.createEl('div');
+    toggleGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 16px;';
 
     const tagsCell = toggleGrid.createEl('div');
     tagsCell.style.cssText =
@@ -366,8 +419,16 @@ class RedbookPullSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    mkCommentCard(
+      syncBody,
+      this.plugin.settings.enableCommentSync,
+      async v => { this.plugin.settings.enableCommentSync = v; await this.plugin.saveSettings(); },
+      this.plugin.settings.commentMaxCount,
+      async n => { this.plugin.settings.commentMaxCount = n; await this.plugin.saveSettings(); },
+    );
+
     // 定时自动同步
-    new Setting(containerEl)
+    new Setting(syncBody)
       .setName('定时自动同步')
       .setDesc('后台按固定间隔同步，遇限流或登录失效时自动关闭')
       .addToggle(toggle => toggle
@@ -380,7 +441,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
         }));
 
     if (this.plugin.settings.autoSyncEnabled) {
-      new Setting(containerEl)
+      new Setting(syncBody)
         .setName('同步间隔（分钟）')
         .setDesc('最小 5 分钟')
         .addText(text => {
@@ -400,9 +461,9 @@ class RedbookPullSettingTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════
     // 3. AI 分类
     // ═══════════════════════════════════════════════════════════
-    section('AI 分类', '可选：同步时自动将笔记归入指定分类目录');
+    const aiBody = section('AI 分类', '可选：同步时自动将笔记归入指定分类目录');
 
-    new Setting(containerEl)
+    new Setting(aiBody)
       .setName('启用 AI 分类')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.enableAiClassify)
@@ -414,10 +475,9 @@ class RedbookPullSettingTab extends PluginSettingTab {
 
     if (this.plugin.settings.enableAiClassify) {
       // API 配置收进一个缩进卡片
-      const apiCard = containerEl.createEl('div');
+      const apiCard = aiBody.createEl('div');
       apiCard.style.cssText =
-        'margin:4px 0 8px 0;padding:4px 0 4px 0;border-radius:8px;' +
-        'background:var(--background-secondary);' +
+        'margin:4px 16px 8px 16px;padding:4px 0;border-radius:8px;' +
         'border:1px solid var(--background-modifier-border);overflow:hidden;';
 
       new Setting(apiCard)
@@ -472,7 +532,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
             testSetting.descEl.style.color = ok ? 'var(--color-green)' : 'var(--text-error)';
           }));
 
-      new Setting(containerEl)
+      new Setting(aiBody)
         .setName('分类列表')
         .setDesc('输入分类名按回车添加；点击 × 删除')
         .addButton(btn => btn
@@ -491,8 +551,10 @@ class RedbookPullSettingTab extends PluginSettingTab {
             this.display();
           }));
 
+      const aiChipsWrap = aiBody.createEl('div');
+      aiChipsWrap.style.cssText = 'padding:0 16px;';
       this.renderChips(
-        containerEl,
+        aiChipsWrap,
         this.plugin.settings.aiCategories,
         async (item) => {
           this.plugin.settings.aiCategories =
@@ -514,14 +576,16 @@ class RedbookPullSettingTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════
     // 4. 关键词同步
     // ═══════════════════════════════════════════════════════════
-    section('关键词同步', '按关键词搜索小红书并同步匹配笔记');
+    const searchBody = section('关键词同步', '按关键词搜索小红书并同步匹配笔记');
 
-    new Setting(containerEl)
+    new Setting(searchBody)
       .setName('关键词列表')
       .setDesc('输入关键词按回车添加；点击 × 删除');
 
+    const kwChipsWrap = searchBody.createEl('div');
+    kwChipsWrap.style.cssText = 'padding:0 16px;';
     this.renderChips(
-      containerEl,
+      kwChipsWrap,
       this.plugin.settings.searchKeywords,
       async (item) => {
         this.plugin.settings.searchKeywords =
@@ -541,10 +605,10 @@ class RedbookPullSettingTab extends PluginSettingTab {
 
     // 关键词状态卡片
     if (this.plugin.settings.searchKeywords.length > 0) {
-      const kwGrid = containerEl.createEl('div');
+      const kwGrid = searchBody.createEl('div');
       kwGrid.style.cssText =
         'display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));' +
-        'gap:6px;margin:4px 0 12px 0;';
+        'gap:6px;margin:6px 16px 4px 16px;';
       for (const kw of this.plugin.settings.searchKeywords) {
         const count = this.plugin.settings.searchedNoteIds[kw]?.length ?? 0;
         const allDone = this.plugin.settings.searchAllSynced[kw];
@@ -612,9 +676,9 @@ class RedbookPullSettingTab extends PluginSettingTab {
       },
     ];
 
-    const filterGrid = containerEl.createEl('div');
+    const filterGrid = searchBody.createEl('div');
     filterGrid.style.cssText =
-      'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0;';
+      'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 16px;';
 
     for (const f of FILTERS) {
       const cell = filterGrid.createEl('div');
@@ -663,8 +727,16 @@ class RedbookPullSettingTab extends PluginSettingTab {
       }
     });
 
+    mkCommentCard(
+      searchBody,
+      this.plugin.settings.enableSearchCommentSync,
+      async v => { this.plugin.settings.enableSearchCommentSync = v; await this.plugin.saveSettings(); },
+      this.plugin.settings.searchCommentMaxCount,
+      async n => { this.plugin.settings.searchCommentMaxCount = n; await this.plugin.saveSettings(); },
+    );
+
     // 定时自动搜索
-    new Setting(containerEl)
+    new Setting(searchBody)
       .setName('定时自动搜索')
       .setDesc('按设定间隔自动执行关键词搜索同步')
       .addToggle(toggle => toggle
@@ -677,7 +749,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
         }));
 
     if (this.plugin.settings.autoSearchEnabled) {
-      new Setting(containerEl)
+      new Setting(searchBody)
         .setName('搜索间隔（分钟）')
         .setDesc('最小 30 分钟，避免触发小红书封控')
         .addText(text => {
@@ -694,7 +766,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
         });
     }
 
-    new Setting(containerEl)
+    new Setting(searchBody)
       .setName('立即执行搜索同步')
       .setDesc('重置各关键词同步状态后立即拉取，已下载内容不会重复同步')
       .addButton(btn => btn
@@ -712,10 +784,10 @@ class RedbookPullSettingTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════
     // 5. 账号订阅
     // ═══════════════════════════════════════════════════════════
-    section('账号订阅', '订阅指定小红书账号，自动下载其帖子到 Users 目录');
+    const followBody = section('账号订阅', '订阅指定小红书账号，自动下载其帖子到 Users 目录');
 
     // 添加账号输入
-    new Setting(containerEl)
+    new Setting(followBody)
       .setName('添加订阅账号')
       .setDesc('输入小红书 UID（主页 URL 中 /user/profile/ 后的字符串），按回车添加')
       .addText(text => {
@@ -745,10 +817,10 @@ class RedbookPullSettingTab extends PluginSettingTab {
 
     // 已订阅账号卡片列表
     if (this.plugin.settings.followedAccounts.length > 0) {
-      const acctGrid = containerEl.createEl('div');
+      const acctGrid = followBody.createEl('div');
       acctGrid.style.cssText =
         'display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));' +
-        'gap:8px;margin:8px 0 12px 0;';
+        'gap:8px;margin:4px 16px 4px 16px;';
 
       for (const acct of this.plugin.settings.followedAccounts) {
         const card = acctGrid.createEl('div');
@@ -804,8 +876,8 @@ class RedbookPullSettingTab extends PluginSettingTab {
     }
 
     // 拉取设置：紧凑网格
-    const followGrid = containerEl.createEl('div');
-    followGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 8px 0;';
+    const followGrid = followBody.createEl('div');
+    followGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 16px;';
 
     const mkFollowCell = (label: string, hint: string) => {
       const cell = followGrid.createEl('div');
@@ -849,8 +921,16 @@ class RedbookPullSettingTab extends PluginSettingTab {
       if (!isNaN(n) && n >= 1) { this.plugin.settings.followMaxDelayMin = n; await this.plugin.saveSettings(); }
     });
 
+    mkCommentCard(
+      followBody,
+      this.plugin.settings.enableFollowCommentSync,
+      async v => { this.plugin.settings.enableFollowCommentSync = v; await this.plugin.saveSettings(); },
+      this.plugin.settings.followCommentMaxCount,
+      async n => { this.plugin.settings.followCommentMaxCount = n; await this.plugin.saveSettings(); },
+    );
+
     // 定时自动同步
-    new Setting(containerEl)
+    new Setting(followBody)
       .setName('定时自动同步订阅')
       .setDesc('按设定间隔自动同步全部订阅账号')
       .addToggle(toggle => toggle
@@ -863,7 +943,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
         }));
 
     if (this.plugin.settings.autoFollowEnabled) {
-      new Setting(containerEl)
+      new Setting(followBody)
         .setName('同步间隔（分钟）')
         .setDesc('最小 30 分钟')
         .addText(text => {
@@ -880,7 +960,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
         });
     }
 
-    new Setting(containerEl)
+    new Setting(followBody)
       .setName('立即同步订阅账号')
       .setDesc('拉取所有订阅账号的最新帖子，已下载内容不会重复同步')
       .addButton(btn => btn
