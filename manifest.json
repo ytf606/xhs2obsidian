@@ -1,7 +1,7 @@
 {
   "id": "xhs2obsidian",
   "name": "XHS Sync",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "minAppVersion": "0.15.0",
   "description": "Sync Xiaohongshu (小红书) bookmarks, posts and likes to your Obsidian vault",
   "author": "ytf606",
