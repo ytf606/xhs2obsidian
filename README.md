@@ -67,7 +67,7 @@
 <tr>
 <td width="50%">
 <b>AI 分类</b> — 支持 OpenAI / Kimi / DeepSeek 等<br/>
-<img src="assets/screenshot-ai.png" alt="AI分类"/>
+<img src="assets/screenshot-ai2.png" alt="AI分类"/>
 </td>
 <td width="50%">
 <b>关键词同步</b> — 多词 · 筛选 · 定时自动搜索<br/>
