@@ -1,12 +1,14 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, addIcon, normalizePath } from 'obsidian';
-import { DEFAULT_SETTINGS, RedbookPullSettings, SYNC_TARGET_LABELS, SyncTarget, SEARCH_SORT_LABELS, SearchSort, SearchNoteType, SearchTimeFilter, SearchRangeFilter, SearchPosFilter, FollowedAccount } from './types';
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, addIcon, normalizePath } from 'obsidian';
+import { DEFAULT_SETTINGS, RedbookPullSettings, SYNC_TARGET_LABELS, SyncTarget, SEARCH_SORT_LABELS, SearchSort, SearchNoteType, SearchTimeFilter, SearchRangeFilter, SearchPosFilter, FollowedAccount, HotspotCategory } from './types';
 import { SignManager } from './sign-manager';
 import { log, logError, LOG_FILE } from './logger';
 import { XhsApi } from './xhs-api';
 import { VaultWriter } from './vault-writer';
 import { SyncEngine } from './sync-engine';
+import { HotspotEngine } from './hotspot-engine';
 import { LoginModal } from './login-modal';
 import { testAiConfig } from './ai-classifier';
+import { suggestHotspotKeywords } from './hotspot-analyzer';
 
 export default class RedbookPullPlugin extends Plugin {
   settings: RedbookPullSettings;
@@ -14,6 +16,7 @@ export default class RedbookPullPlugin extends Plugin {
   private api: XhsApi;
   private writer: VaultWriter;
   private engine: SyncEngine;
+  private hotspot: HotspotEngine;
   private autoSyncTimer: number | null = null;
   private autoSearchTimer: number | null = null;
   private autoFollowTimer: number | null = null;
@@ -81,6 +84,11 @@ export default class RedbookPullPlugin extends Plugin {
       name: '同步订阅账号',
       callback: () => this.engine.syncFollowedAccounts(),
     });
+    this.addCommand({
+      id: 'analyze-hotspots',
+      name: '分析热点（分析所有热点分类）',
+      callback: () => this.analyzeAllHotspots(),
+    });
 
     this.addSettingTab(new RedbookPullSettingTab(this.app, this));
 
@@ -118,6 +126,18 @@ export default class RedbookPullPlugin extends Plugin {
       (url) => this.sign.fetchBinary(url),
     );
     this.engine = new SyncEngine(this.settings, this.api, this.writer, () => this.saveSettings());
+    this.hotspot = new HotspotEngine(this.settings, this.api, this.app.vault, this.writer, () => this.saveSettings());
+  }
+
+  async analyzeAllHotspots(): Promise<void> {
+    const categories = this.settings.hotspotCategories;
+    if (!categories.length) {
+      new Notice('热点管理：请先在设置中添加热点分类');
+      return;
+    }
+    for (const cat of categories) {
+      await this.hotspot.analyzeCategory(cat);
+    }
   }
 
   openLoginModal(): void {
@@ -201,6 +221,7 @@ class RedbookPullSettingTab extends PluginSettingTab {
       { icon: '🤖', color: '#9c6fe8' },   // AI 分类
       { icon: '🔍', color: '#f4973b' },   // 关键词同步
       { icon: '📰', color: '#ff2442' },   // 账号订阅
+      { icon: '🔥', color: '#e8632a' },   // 热点管理
     ];
     let sectionIdx = 0;
     const section = (title: string, desc?: string): HTMLElement => {
@@ -530,6 +551,16 @@ class RedbookPullSettingTab extends PluginSettingTab {
             btn.setButtonText('测试');
             testSetting.setDesc(message);
             testSetting.descEl.style.color = ok ? 'var(--color-green)' : 'var(--text-error)';
+          }));
+
+      new Setting(aiBody)
+        .setName('AI 打标')
+        .setDesc('同步时自动为每篇笔记生成 3–6 个语义标签，追加到 frontmatter tags 字段，同时写入 aiTags 字段')
+        .addToggle(t => t
+          .setValue(this.plugin.settings.enableAiTagging)
+          .onChange(async v => {
+            this.plugin.settings.enableAiTagging = v;
+            await this.plugin.saveSettings();
           }));
 
       new Setting(aiBody)
@@ -967,6 +998,238 @@ class RedbookPullSettingTab extends PluginSettingTab {
         .setButtonText('立即同步')
         .setCta()
         .onClick(() => this.plugin.engine.syncFollowedAccounts()));
+
+    // ═══════════════════════════════════════════════════════════
+    // 6. 热点管理
+    // ═══════════════════════════════════════════════════════════
+    const hotspotBody = section(
+      '热点管理',
+      '按分类管理关键词，搜索「最多点赞」前 30 条，对前 15 条进行 AI 深度分析并保存日报',
+    );
+
+    // Preset categories with built-in keywords
+    const HOTSPOT_PRESETS: Array<{ label: string; name: string; keywords: string[] }> = [
+      {
+        label: '📐 数学',
+        name: '数学类',
+        keywords: ['小学数学', '三年级数学', '数学思维', '数学启蒙', '小学数学学习方法', '四年级数学', '数学应用题', '小学奥数'],
+      },
+      {
+        label: '🔤 英语',
+        name: '英语类',
+        keywords: ['英语启蒙', '自然拼读', '小学英语', '英语学习方法', '少儿英语', '英语阅读', '英语听力', '英语单词'],
+      },
+      {
+        label: '📖 语文',
+        name: '语文类',
+        keywords: ['大语文', '阅读理解', '作文方法', '小学语文', '语文学习', '古诗词', '写作技巧', '语文启蒙'],
+      },
+    ];
+
+    // Preset quick-add row
+    const presetRow = hotspotBody.createEl('div');
+    presetRow.style.cssText = 'padding:4px 16px 8px 16px;';
+    presetRow.createEl('div', { text: '快速添加预设分类' }).style.cssText =
+      'font-size:11px;color:var(--text-muted);margin-bottom:6px;';
+    const presetBtnRow = presetRow.createEl('div');
+    presetBtnRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;';
+
+    for (const preset of HOTSPOT_PRESETS) {
+      const alreadyAdded = this.plugin.settings.hotspotCategories.some(c => c.name === preset.name);
+      const pb = presetBtnRow.createEl('button', { text: alreadyAdded ? `${preset.label} ✓` : preset.label });
+      pb.style.cssText =
+        `font-size:12px;padding:4px 12px;cursor:pointer;border-radius:12px;border:none;` +
+        (alreadyAdded
+          ? 'background:var(--background-modifier-border);color:var(--text-muted);'
+          : 'background:var(--interactive-accent);color:var(--text-on-accent);');
+      pb.disabled = alreadyAdded;
+      pb.onclick = async () => {
+        if (this.plugin.settings.hotspotCategories.some(c => c.name === preset.name)) return;
+        this.plugin.settings.hotspotCategories.push({ name: preset.name, keywords: [...preset.keywords], lastAnalyzedAt: null });
+        await this.plugin.saveSettings();
+        this.display();
+      };
+    }
+
+    // Custom category add input
+    const addRow = hotspotBody.createEl('div');
+    addRow.style.cssText = 'padding:0 16px 4px 16px;display:flex;gap:8px;align-items:center;';
+    const addInput = addRow.createEl('input') as HTMLInputElement;
+    addInput.type = 'text';
+    addInput.placeholder = '自定义分类名称，按回车添加';
+    addInput.style.cssText =
+      'flex:1;padding:6px 10px;border-radius:4px;font-size:13px;' +
+      'border:1px solid var(--background-modifier-border);' +
+      'background:var(--background-primary);color:var(--text-normal);';
+    addInput.addEventListener('keydown', async (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+      const name = addInput.value.trim();
+      if (!name) return;
+      if (this.plugin.settings.hotspotCategories.some(c => c.name === name)) {
+        new Notice('热点管理：该分类已存在');
+        return;
+      }
+      this.plugin.settings.hotspotCategories.push({ name, keywords: [], lastAnalyzedAt: null });
+      await this.plugin.saveSettings();
+      addInput.value = '';
+      this.display();
+    });
+
+    // Category cards
+    for (const cat of this.plugin.settings.hotspotCategories) {
+      const catCard = hotspotBody.createEl('div');
+      catCard.style.cssText =
+        'margin:6px 16px;border-radius:8px;overflow:hidden;' +
+        'border:1px solid var(--background-modifier-border);';
+
+      // Category header row
+      const catHeader = catCard.createEl('div');
+      catHeader.style.cssText =
+        'display:flex;align-items:center;justify-content:space-between;gap:8px;' +
+        'padding:8px 12px;background:var(--background-secondary);' +
+        'border-bottom:1px solid var(--background-modifier-border);';
+
+      const catInfo = catHeader.createEl('div');
+      catInfo.style.cssText = 'flex:1;min-width:0;';
+      catInfo.createEl('span', { text: `🔥 ${cat.name}` }).style.cssText =
+        'font-size:14px;font-weight:600;';
+      catInfo.createEl('div', {
+        text: cat.lastAnalyzedAt
+          ? `上次分析：${new Date(cat.lastAnalyzedAt).toLocaleDateString('zh-CN')} · ${cat.keywords.length} 个关键词`
+          : `${cat.keywords.length} 个关键词 · 未分析`,
+      }).style.cssText = 'font-size:11px;color:var(--text-muted);margin-top:2px;';
+
+      const catBtns = catHeader.createEl('div');
+      catBtns.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0;';
+
+      const analyzeBtn = catBtns.createEl('button', { text: '立即分析' });
+      analyzeBtn.style.cssText =
+        'font-size:12px;padding:4px 12px;cursor:pointer;border-radius:4px;font-weight:600;' +
+        'background:var(--interactive-accent);color:var(--text-on-accent);border:none;';
+      analyzeBtn.onclick = () => this.plugin.hotspot.analyzeCategory(cat);
+
+      const canAi = this.plugin.settings.enableAiClassify && !!this.plugin.settings.openaiApiKey;
+      const suggestBtn = catBtns.createEl('button', { text: 'AI 推荐词' });
+      suggestBtn.style.cssText =
+        'font-size:12px;padding:4px 10px;cursor:pointer;border-radius:4px;border:none;' +
+        (canAi
+          ? 'background:var(--background-modifier-border);color:var(--text-normal);'
+          : 'background:var(--background-modifier-border);color:var(--text-muted);cursor:not-allowed;');
+      suggestBtn.title = canAi ? 'AI 自动推荐关键词（会替换现有关键词）' : '请先在「AI 分类」区块配置并启用 AI';
+      suggestBtn.onclick = async () => {
+        if (!canAi) { new Notice('热点管理：请先配置并启用 AI 分类'); return; }
+        suggestBtn.textContent = '推荐中…';
+        suggestBtn.disabled = true;
+        try {
+          const keywords = await suggestHotspotKeywords(
+            cat.name,
+            this.plugin.settings.openaiApiKey,
+            this.plugin.settings.openaiBaseUrl,
+            this.plugin.settings.openaiModel,
+          );
+          if (keywords.length) {
+            cat.keywords = keywords;
+            await this.plugin.saveSettings();
+            this.display();
+          } else {
+            new Notice('热点管理：AI 未返回关键词，请检查 AI 配置');
+            suggestBtn.textContent = 'AI 推荐词';
+            suggestBtn.disabled = false;
+          }
+        } catch (e: any) {
+          new Notice(`热点管理：AI 推荐失败 — ${e.message}`);
+          suggestBtn.textContent = 'AI 推荐词';
+          suggestBtn.disabled = false;
+        }
+      };
+
+      const clearBtn = catBtns.createEl('button', { text: '清理数据' });
+      clearBtn.style.cssText =
+        'font-size:12px;padding:4px 10px;cursor:pointer;border-radius:4px;border:none;' +
+        'background:var(--background-modifier-border);color:var(--text-muted);';
+      clearBtn.title = '删除此分类下所有已抓取的帖子和报告，以便重新分析';
+      clearBtn.onclick = async () => {
+        const root = this.plugin.settings.rootFolder;
+        const folderPath = normalizePath(`${root}/Hotspots/${cat.name}`);
+        const folder = this.app.vault.getAbstractFileByPath(folderPath);
+        if (folder instanceof TFolder) {
+          // Delete media subfolders for each note in this category
+          const mediaRoot = normalizePath(`${root}/Media`);
+          for (const child of folder.children) {
+            if (child instanceof TFile && child.extension === 'md') {
+              const mediaFolder = this.app.vault.getAbstractFileByPath(
+                normalizePath(`${mediaRoot}/${child.basename}`),
+              );
+              if (mediaFolder instanceof TFolder) {
+                await this.app.vault.trash(mediaFolder, false);
+              }
+            }
+          }
+          await this.app.vault.trash(folder, false);
+          new Notice(`热点管理：已清理「${cat.name}」数据及媒体文件`);
+        } else {
+          new Notice(`热点管理：「${cat.name}」暂无数据`);
+        }
+        cat.lastAnalyzedAt = null;
+        await this.plugin.saveSettings();
+        this.display();
+      };
+
+      const delBtn = catBtns.createEl('button', { text: '×' });
+      delBtn.style.cssText =
+        'background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:18px;line-height:1;padding:0 2px;';
+      delBtn.onclick = async () => {
+        this.plugin.settings.hotspotCategories =
+          this.plugin.settings.hotspotCategories.filter(c => c.name !== cat.name);
+        await this.plugin.saveSettings();
+        this.display();
+      };
+
+      // Keyword management area
+      const kwArea = catCard.createEl('div');
+      kwArea.style.cssText = 'padding:8px 12px 10px 12px;';
+      kwArea.createEl('div', { text: '关键词（4–8 个，按回车添加）' }).style.cssText =
+        'font-size:11px;color:var(--text-muted);margin-bottom:6px;';
+
+      this.renderChips(
+        kwArea,
+        cat.keywords,
+        async (kw) => {
+          cat.keywords = cat.keywords.filter(k => k !== kw);
+          await this.plugin.saveSettings();
+          this.display();
+        },
+        async (kw) => {
+          if (cat.keywords.length >= 8) {
+            new Notice('热点管理：每个分类最多 8 个关键词');
+            return;
+          }
+          if (!cat.keywords.includes(kw)) {
+            cat.keywords.push(kw);
+            await this.plugin.saveSettings();
+            this.display();
+          }
+        },
+        '输入关键词，按回车添加',
+      );
+    }
+
+    if (this.plugin.settings.hotspotCategories.length === 0) {
+      hotspotBody.createEl('div', { text: '暂无分类，请点击上方预设按钮或输入自定义分类名称' }).style.cssText =
+        'padding:6px 16px 10px 16px;font-size:12px;color:var(--text-muted);';
+    }
+
+    // Global trigger button — always visible
+    new Setting(hotspotBody)
+      .setName('分析全部分类')
+      .setDesc(
+        '依次分析所有分类，每次搜索/获取详情间隔 30 秒–5 分钟。' +
+        '帖子保存至 Hotspots/{分类}/，分析报告保存至 Hotspots/{分类}/报告/{YYYY-MM-DD}.md。',
+      )
+      .addButton(btn => btn
+        .setButtonText('全部立即分析')
+        .setCta()
+        .onClick(() => this.plugin.analyzeAllHotspots()));
   }
 
   private renderChips(

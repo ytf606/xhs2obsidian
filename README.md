@@ -1,12 +1,13 @@
 <p align="center">
-  <img src="assets/logo.png" alt="XHS Sync Logo" width="120" />
+  <img src="assets/logo.png" alt="XHS Sync Logo" width="100" />
 </p>
 
-<h1 align="center">XHS Sync</h1>
+<h1 align="center">XHS Sync · 小红书 → Obsidian</h1>
 
 <p align="center">
-  将小红书的<strong>收藏、点赞、个人帖子</strong>自动同步到 Obsidian，保存为带图片的 Markdown 笔记。<br/>
-  Sync your Xiaohongshu (小红书/RedNote) bookmarks, likes and posts to Obsidian as Markdown notes with images.
+  将小红书的<strong>收藏、点赞、帖子、搜索结果、订阅账号</strong>一键同步到 Obsidian<br/>
+  图片/视频本地化 · AI 智能分类 · 热点分析日报 · 全程自动化<br/><br/>
+  Sync Xiaohongshu (RedNote) bookmarks, likes, posts, searches and followed accounts to Obsidian — with media, AI tagging and hotspot reports.
 </p>
 
 <p align="center">
@@ -21,85 +22,134 @@
 </p>
 
 <p align="center">
-  <a href="#中文说明">中文</a> | <a href="#english">English</a>
+  <a href="#中文说明">中文</a> · <a href="#english">English</a>
+</p>
+
+<p align="center">
+  <img src="assets/screenshot-vault.png" alt="Obsidian Vault 效果预览" width="780" />
 </p>
 
 ---
 
 ## 中文说明
 
-### ✨ 功能特性
+### ✨ 功能一览
 
 | 功能 | 说明 |
 |------|------|
-| 📚 **三类内容同步** | 支持同步**收藏**、**点赞**、**个人帖子** |
-| 🔍 **关键词搜索** | 按关键词搜索小红书并同步匹配笔记 |
-| 🖼️ **媒体下载** | 自动下载图片和视频到本地，离线可查 |
-| 🤖 **AI 自动分类** | 接入 OpenAI 兼容 API，智能归类到自定义文件夹 |
-| ⏱️ **定时自动同步** | 后台定时同步，新内容实时入库 |
-| 🔄 **增量同步** | 记录已同步 ID，重复运行只拉取新增内容 |
+| 📚 **五类内容同步** | 收藏 · 点赞 · 个人帖子 · 关键词搜索 · 订阅账号 |
+| 🖼️ **媒体本地化** | 图片和视频自动下载，离线永久可查 |
+| 🤖 **AI 智能分类** | 接入任意 OpenAI 兼容 API，自动归入自定义分类目录 |
+| 🏷️ **AI 自动打标** | 每篇笔记生成 3–6 个语义标签写入 frontmatter |
+| 🔥 **热点分析日报** | 按分类抓取最热内容，AI 深度分析爆款因素，生成日报 |
+| 📰 **账号订阅** | 订阅指定博主，定时拉取最新帖子 |
+| 💬 **评论抓取** | 可选同步主评论 + 子评论，设置抓取上限 |
+| ⏱️ **定时自动同步** | 后台定时运行，新内容自动入库 |
+| 🔄 **增量同步** | 记录已同步 ID，不重复拉取 |
 | 📁 **专辑目录** | 收藏夹按专辑自动分子目录 |
-| 📝 **结构化笔记** | Frontmatter 记录 ID、标签、点赞数、评论数等元数据 |
+| 📝 **结构化笔记** | frontmatter 记录 id、author、tags、likes、comments 等完整元数据 |
 
-### 📸 截图预览
+---
 
-> 截图即将更新，欢迎贡献 PR。
+### 📸 界面预览
 
-### 🗂️ 生成的文件结构
+<table>
+<tr>
+<td width="50%">
+<b>账号设置</b> — 登录状态 · 同步统计 · 缓存管理<br/>
+<img src="assets/screenshot-account.png" alt="账号设置"/>
+</td>
+<td width="50%">
+<b>同步设置</b> — 目录 · 批量 · 标签 · 评论 · 定时<br/>
+<img src="assets/screenshot-sync.png" alt="同步设置"/>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<b>AI 分类</b> — 支持 OpenAI / Kimi / DeepSeek 等<br/>
+<img src="assets/screenshot-ai.png" alt="AI分类"/>
+</td>
+<td width="50%">
+<b>关键词同步</b> — 多词 · 筛选 · 定时自动搜索<br/>
+<img src="assets/screenshot-search.png" alt="关键词同步"/>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<b>账号订阅</b> — UID 订阅 · 随机延迟 · 评论同步<br/>
+<img src="assets/screenshot-subscribe.png" alt="账号订阅"/>
+</td>
+<td width="50%">
+<b>热点管理</b> — 分类关键词 · AI 推词 · 一键分析<br/>
+<img src="assets/screenshot-hotspot.png" alt="热点管理"/>
+</td>
+</tr>
+</table>
 
-同步完成后，Vault 中自动生成：
+---
+
+### 🗂️ Vault 文件结构
+
+同步后在 Obsidian Vault 中自动生成：
 
 ```
 RedNote/
-├── Bookmarks/          # 收藏的笔记
-│   ├── [专辑名]/       # 开启专辑同步时按专辑分组
-│   │   └── 笔记标题.md
+├── Bookmarks/              # 收藏的笔记
+│   ├── [专辑名]/           # 开启"同步专辑"后按专辑分组
 │   └── 笔记标题.md
-├── Posts/              # 个人发布的帖子
-│   └── 笔记标题.md
-├── Likes/              # 点赞的帖子
-│   └── 笔记标题.md
-├── Search/             # 搜索结果
-│   └── [关键词]/
+├── Posts/                  # 个人发布的帖子
+├── Likes/                  # 点赞的帖子
+├── Search/
+│   └── [关键词]/           # 每个关键词独立目录
 │       └── 笔记标题.md
-└── Media/              # 下载的图片和视频
-    └── 笔记标题/       # 每篇笔记独立媒体文件夹
-        ├── 1.jpg
-        ├── 2.jpg
-        └── video.mp4
+├── Users/
+│   └── [博主昵称]/
+│       ├── _profile.md     # 博主主页档案
+│       └── 笔记标题.md
+├── Hotspots/
+│   └── [分类名]/
+│       ├── 笔记标题.md
+│       └── 报告/
+│           └── 2026-05-28.md   # AI 热点日报
+└── Media/
+    ├── 笔记标题/           # 每篇笔记独立媒体文件夹
+    │   ├── 1.jpg
+    │   └── video.mp4
+    └── avatars/            # 评论头像
 ```
 
-每篇笔记的 Markdown 格式：
+每篇笔记的 Markdown 示例：
 
 ```markdown
 ---
-id: "6xxxxxxxxxxxxxxxxxxxxxxx"
-title: "笔记标题"
-author: "作者昵称"
-type: bookmarks
-url: "https://www.xiaohongshu.com/explore/6xxx"
-tags: [美食, 生活, 旅行]
-category: "AI分类结果"
-createdAt: "2024-01-01T00:00:00.000Z"
-syncedAt: "2024-01-02 10:30:00"
-likes: 1234
-comments: 56
+id: "6a1301080000000035033100"
+title: "恐惧型依恋小时候"
+author: "小冻梨 认人疗愈"
+type: search
+url: "https://www.xiaohongshu.com/explore/6a130108..."
+tags: [依恋模型, 我们的爸爸, 综艺解读]
+aiTags: [依恋理论, 情感疗愈, 亲子关系]
+category: "恐惧型依恋"
+createdAt: "2026-05-24T13:45:44.000Z"
+syncedAt: "2026-05-28 10:55:29"
+likes: 1128
+comments: 72
 ---
 
-笔记正文内容…
+笔记正文…
 
-![](../Media/笔记标题/1.jpg)
-
-![](../Media/笔记标题/2.jpg)
+![](../Media/恐惧型依恋小时候/1.jpg)
 ```
+
+---
 
 ### 🚀 安装
 
 #### 方式一：从 Release 安装（推荐）
 
-1. 前往 [Releases](https://github.com/ytf606/xhs2obsidian/releases/latest) 下载最新的 `xhs2obsidian-x.x.x.zip`
+1. 前往 [**Releases**](https://github.com/ytf606/xhs2obsidian/releases/latest) 下载最新 `xhs2obsidian-x.x.x.zip`
 2. 解压后将文件夹复制到 Vault 的 `.obsidian/plugins/` 目录
-3. 打开 Obsidian → **设置 → 第三方插件** → 关闭「安全模式」→ 刷新列表 → 找到 **XHS Sync** → 启用
+3. Obsidian → **设置 → 第三方插件** → 关闭「安全模式」→ 刷新列表 → 启用 **XHS Sync**
 
 #### 方式二：从源码构建
 
@@ -113,79 +163,91 @@ npm run build
 
 > **注意：** 本插件依赖 Electron WebView，仅支持 Obsidian **桌面端**（macOS / Windows / Linux）。
 
-### 📖 使用指南
+---
+
+### 📖 快速开始
 
 #### 第一步：登录小红书
 
-1. 打开 **设置 → XHS Sync**
-2. 点击「**登录**」按钮
-3. 在弹出的小红书内置浏览器中完成登录（支持扫码 / 手机号 / 账号密码）
-4. 登录成功后点击「**登录完成，提取 Cookie**」
-5. 状态显示「已登录：你的昵称」表示成功
+1. Obsidian → **设置 → XHS Sync**
+2. 点击「**登录**」→ 在内置浏览器中完成扫码 / 手机号登录
+3. 登录后点击「**登录完成，提取 Cookie**」
+4. 状态栏显示「已登录：你的昵称」即成功
 
-> Cookie 有效期约 30–90 天，过期后重新登录即可，不影响已同步的笔记。
+> Cookie 有效期约 30–90 天，过期后重新登录即可，不影响已同步笔记。
 
-#### 第二步：选择同步目标
+#### 第二步：选择同步内容
 
-| 选项 | 说明 |
-|------|------|
-| 收藏 | 你收藏的帖子（默认） |
-| 个人帖子 | 你自己发布的帖子 |
-| 点赞 | 你点赞的帖子 |
+在设置中选择同步目标（收藏 / 点赞 / 个人帖子），或配置关键词搜索、账号订阅。
 
 #### 第三步：开始同步
 
-- **方式 1：** 点击左侧 Ribbon 栏的云下载图标
-- **方式 2：** 按 `Cmd+P` / `Ctrl+P`，搜索「同步收藏 / 同步个人帖子 / 同步点赞」
+| 方式 | 操作 |
+|------|------|
+| 快速同步 | 点击左侧 Ribbon 栏云下载图标 |
+| 命令面板 | `Cmd/Ctrl+P` → 搜索「同步收藏 / 同步点赞 / 关键词搜索…」|
+| 自动同步 | 在设置中开启「定时自动同步」 |
 
-同步进度会以通知气泡实时显示，完成后提示新增条数。
+同步进度以通知气泡实时显示，完成后提示新增条数。
 
-### ⚙️ 配置说明
+---
+
+### ⚙️ 主要配置项
+
+#### 同步设置
 
 | 设置项 | 默认值 | 说明 |
 |--------|--------|------|
-| 根目录名 | `RedNote` | Vault 内存储目录 |
-| 同步目标 | 收藏 | Ribbon 图标触发的同步类型 |
+| 存储目录 | `RedNote` | Vault 内根目录名 |
+| 同步内容 | 收藏 | Ribbon 图标触发的同步类型 |
 | 每批数量 | 5 | 每次 API 请求条目数，建议 5–10 |
 | 同步标签 | 开启 | 将小红书话题标签写入 frontmatter |
-| 同步专辑 | 关闭 | 收藏夹按专辑分子目录存放 |
-| 定时自动同步 | 关闭 | 按设定间隔后台自动同步 |
-| 同步间隔 | 10 分钟 | 建议 ≥10 分钟 |
-| AI 分类 | 关闭 | 启用后需配置 OpenAI 兼容 API |
+| 同步专辑 | 关闭 | 收藏夹按专辑分子目录 |
+| 抓取评论 | 关闭 | 同步主评论及子评论 |
+| 最大评论数 | 100 | 每帖主评论 + 子评论总上限 |
+| 定时自动同步 | 关闭 | 后台按间隔自动同步 |
+| 同步间隔 | 10 分钟 | 建议 ≥ 10 分钟 |
 
-#### 关键词搜索设置
+#### AI 分类
+
+配置任意 OpenAI 兼容 API（OpenAI / Kimi / DeepSeek / OpenRouter 等）后，同步时自动将笔记归入自定义分类目录，并可开启 AI 打标（每篇生成 3–6 个语义标签）。
+
+#### 关键词搜索
 
 | 设置项 | 说明 |
 |--------|------|
-| 搜索关键词 | 多个关键词逐行输入 |
-| 排序方式 | 综合 / 最新 / 最热 / 评论数 / 收藏数 |
+| 关键词列表 | 多关键词，每个独立目录，支持增量 |
+| 排序方式 | 综合 / 最新 / 最多点赞 / 评论数 / 收藏数 |
 | 笔记类型 | 不限 / 视频 / 图文 |
 | 时间范围 | 不限 / 一天 / 一周 / 半年 |
+| 定时自动搜索 | 按间隔自动执行，新增内容自动入库 |
 
-#### AI 自动分类
+#### 账号订阅
 
-配置 OpenAI 兼容 API（支持 OpenAI、OpenRouter 等）后，插件会在同步时自动将笔记归类到你设定的文件夹，例如：
+输入博主主页 URL 中 `/user/profile/` 后的 UID，每次拉取最新 30 条帖子，支持随机延迟避免触发限流。
 
-```
-美食、旅行、穿搭、学习、健身、家居、数码 …
-```
+#### 热点管理
+
+按分类维护关键词列表（4–8 个/分类），一键触发：搜索最多点赞前 30 条 → AI 深度分析前 15 条爆款因素 → 生成结构化日报保存至 `Hotspots/[分类]/报告/YYYY-MM-DD.md`。
+
+---
 
 ### ❓ 常见问题
 
 **Q：同步时提示「请先登录」**  
-Cookie 已过期，重新点击「重新登录」完成一次登录即可。
+Cookie 已过期，点击「重新登录」完成一次登录即可。
 
 **Q：同步一段时间后报错停止**  
-触发了小红书的频率限制。将「每批数量」调小至 3–5，等待几分钟后重试。
+触发了小红书频率限制。将「每批数量」调小至 3–5，等待几分钟后重试。
 
 **Q：图片或视频没有下载**  
-小红书媒体文件有时效性，建议尽快同步。清除缓存后重新同步可重试失败项。
+小红书媒体链接有时效性，建议尽快同步。清除缓存后重新同步可重试失败项。
 
-**Q：如何从头重新同步**  
-进入设置 → 数据 → 点击「清除缓存并重新同步」。
+**Q：如何从头重新同步所有内容**  
+设置 → 账号设置 → 点击「清除缓存」，下次同步将重新拉取全部内容。
 
-**Q：自动同步被自动关闭了**  
-遇到限流或登录失效时，插件会自动关闭自动同步以保护账号。处理原因后在设置中重新开启。
+**Q：定时同步被自动关闭了**  
+遇到限流或 Cookie 失效时插件会自动关闭定时同步以保护账号，处理后在设置中重新开启。
 
 ---
 
@@ -193,22 +255,26 @@ Cookie 已过期，重新点击「重新登录」完成一次登录即可。
 
 ### ✨ Features
 
-- **Three content types**: Sync your bookmarks, liked posts, and personal posts
-- **Keyword search**: Search Xiaohongshu and sync matching notes
-- **Media download**: Automatically downloads images and videos locally
-- **AI classification**: Categorize notes into custom folders using any OpenAI-compatible API
-- **Auto sync**: Background timer-based sync for new content
-- **Incremental sync**: Tracks synced IDs to avoid duplicates
-- **Album folders**: Organize bookmarks by collection folders
-- **Structured notes**: Frontmatter with tags, likes, comments, and metadata
+| Feature | Description |
+|---------|-------------|
+| 📚 **5 content types** | Bookmarks · Likes · Posts · Keyword search · Account subscriptions |
+| 🖼️ **Local media** | Images and videos downloaded locally for offline access |
+| 🤖 **AI classification** | Auto-categorize notes into custom folders via any OpenAI-compatible API |
+| 🏷️ **AI tagging** | Generate 3–6 semantic tags per note, written to frontmatter |
+| 🔥 **Hotspot reports** | Fetch top-liked content by category, AI-analyzes viral factors, saves daily report |
+| 📰 **Account subscriptions** | Follow XHS creators by UID, sync latest posts automatically |
+| 💬 **Comment sync** | Optionally sync top-level and sub-comments with configurable limits |
+| ⏱️ **Auto sync** | Background timer-based sync, pauses on rate-limit or auth failure |
+| 🔄 **Incremental sync** | Tracks synced IDs to avoid duplicates |
+| 📝 **Structured notes** | Frontmatter with id, author, tags, aiTags, category, likes, comments |
 
 ### 🚀 Installation
 
 #### Option 1: Download Release (Recommended)
 
-1. Download the latest `xhs2obsidian-x.x.x.zip` from [Releases](https://github.com/ytf606/xhs2obsidian/releases/latest)
+1. Download the latest `xhs2obsidian-x.x.x.zip` from [**Releases**](https://github.com/ytf606/xhs2obsidian/releases/latest)
 2. Extract and copy the folder to your Vault's `.obsidian/plugins/` directory
-3. Open Obsidian → **Settings → Community plugins** → Disable safe mode → Refresh → Enable **XHS Sync**
+3. Obsidian → **Settings → Community plugins** → Disable safe mode → Refresh → Enable **XHS Sync**
 
 #### Option 2: Build from Source
 
@@ -222,11 +288,11 @@ npm run build
 
 > **Note:** This plugin requires Electron WebView and only works on Obsidian **desktop** (macOS / Windows / Linux).
 
-### 📖 Usage
+### 📖 Quick Start
 
-1. **Login**: Go to Settings → XHS Sync → click **Login** → complete login in the built-in browser → click **Extract Cookie**
-2. **Select sync target**: Choose bookmarks, likes, or personal posts in settings
-3. **Sync**: Click the cloud icon in the left ribbon, or use the command palette (`Cmd/Ctrl+P`)
+1. **Login** — Settings → XHS Sync → **Login** → complete login in the built-in browser → click **Extract Cookie**
+2. **Configure** — Choose sync target, add keywords, or subscribe to accounts
+3. **Sync** — Click the cloud icon in the ribbon, or use the command palette (`Cmd/Ctrl+P`)
 
 ### ⚙️ Configuration
 
@@ -236,21 +302,22 @@ npm run build
 | Sync target | Bookmarks | What to sync via ribbon icon |
 | Batch size | 5 | Items per API request (5–10 recommended) |
 | Sync tags | On | Write hashtags to frontmatter |
-| Sync albums | Off | Organize bookmarks by collection |
-| Auto sync | Off | Background sync at fixed interval |
+| Sync albums | Off | Organize bookmarks into album sub-folders |
+| Fetch comments | Off | Sync comments and replies per note |
+| Auto sync | Off | Background sync at a fixed interval |
 | Sync interval | 10 min | Minimum 10 minutes recommended |
-| AI classify | Off | Requires OpenAI-compatible API config |
+| AI classify | Off | Requires OpenAI-compatible API credentials |
 
 ### ❓ FAQ
 
 **Q: "Please login first" error**  
-Your cookie has expired. Click "Re-login" in settings to complete a new login.
+Your cookie has expired. Click "Re-login" in settings to refresh.
 
-**Q: Sync stops with an error**  
-Rate limited by Xiaohongshu. Reduce batch size to 3–5 and wait a few minutes before retrying.
+**Q: Sync stops with a rate-limit error**  
+Reduce batch size to 3–5 and wait a few minutes before retrying.
 
-**Q: Images/videos not downloading**  
-XHS media URLs expire quickly. Sync as soon as possible after saving content. Clear cache to retry failed downloads.
+**Q: Images or videos are missing**  
+XHS media URLs expire quickly. Sync soon after saving content. Clear cache to retry failed downloads.
 
 ---
 
@@ -260,7 +327,7 @@ Issues and PRs are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) befor
 
 ## ⚠️ Disclaimer
 
-This plugin is not affiliated with or endorsed by Xiaohongshu (小红书). It uses the web interface for personal data access only. Use responsibly and in compliance with Xiaohongshu's Terms of Service.
+This plugin is not affiliated with or endorsed by Xiaohongshu (小红书). It accesses only your own personal data via the web interface. Use responsibly and in compliance with Xiaohongshu's Terms of Service.
 
 ## 📄 License
 

@@ -2,7 +2,7 @@ import { Notice } from 'obsidian';
 import { RedbookPullSettings, SyncTarget, SYNC_TARGET_LABELS, XhsNote, XhsComment, SearchSort } from './types';
 import { XhsApi } from './xhs-api';
 import { VaultWriter } from './vault-writer';
-import { classifyNote } from './ai-classifier';
+import { classifyNote, generateAiTags } from './ai-classifier';
 import { log, logError } from './logger';
 
 export class SyncEngine {
@@ -112,7 +112,8 @@ export class SyncEngine {
               logError('[SyncEngine] fetchAllComments error:', e.message);
             }
           }
-          await this.writer.write(note, target, category, comments);
+          const aiTags = await this.getAiTags(note);
+          await this.writer.write(note, target, category, comments, aiTags);
           this.settings.syncedIds[target].push(listNote.id);
           savedCount++;
         }
@@ -220,7 +221,8 @@ export class SyncEngine {
                   logError('[SyncEngine] fetchAllComments error:', e.message);
                 }
               }
-              await this.writer.write(note, 'search', keyword, comments);
+              const aiTagsSearch = await this.getAiTags(note);
+              await this.writer.write(note, 'search', keyword, comments, aiTagsSearch);
               this.settings.searchedNoteIds[keyword].push(listNote.id);
               savedCount++;
               totalSaved++;
@@ -320,7 +322,8 @@ export class SyncEngine {
                   logError('[SyncEngine] fetchAllComments error:', e.message);
                 }
               }
-              await this.writer.write(note, 'user', nickname, comments);
+              const aiTagsFollow = await this.getAiTags(note);
+              await this.writer.write(note, 'user', nickname, comments, aiTagsFollow);
               account.fetchedNoteIds.push(listNote.id);
               savedCount++;
               totalSaved++;
@@ -411,6 +414,23 @@ export class SyncEngine {
 
     log(`[SyncEngine] fetched ${totalCount} comments (${topLevel.length} top-level) for ${noteId}`);
     return topLevel;
+  }
+
+  private async getAiTags(note: XhsNote): Promise<string[]> {
+    if (!this.settings.enableAiClassify || !this.settings.enableAiTagging || !this.settings.openaiApiKey) return [];
+    try {
+      return await generateAiTags(
+        note.title || note.desc.slice(0, 40),
+        note.desc,
+        note.tagList.map(t => t.name),
+        this.settings.openaiApiKey,
+        this.settings.openaiBaseUrl,
+        this.settings.openaiModel,
+      );
+    } catch (e: any) {
+      logError('[SyncEngine] getAiTags error:', e.message);
+      return [];
+    }
   }
 
   private async fetch(target: SyncTarget, cursor: string | null) {
