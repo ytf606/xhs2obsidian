@@ -77,6 +77,10 @@ export interface RedbookPullSettings {
   followMaxDelayMin: number;
   autoFollowEnabled: boolean;
   followIntervalMinutes: number;
+  // AI 打标
+  enableAiTagging: boolean;
+  // 热点管理
+  hotspotCategories: HotspotCategory[];
   // 评论同步（三个入口独立开关 + 各自的上限）
   enableCommentSync: boolean;        // 收藏/点赞/帖子同步
   commentMaxCount: number;
@@ -118,6 +122,8 @@ export const DEFAULT_SETTINGS: RedbookPullSettings = {
   searchPages: {},
   searchedNoteIds: {},
   searchAllSynced: {},
+  enableAiTagging: false,
+  hotspotCategories: [],
   followedAccounts: [],
   followMinDelayMin: 1,
   followMaxDelayMin: 10,
@@ -194,6 +200,12 @@ export interface FollowedAccount {
   fetchedNoteIds: string[];
   cursor: string | null;
   allFetched: boolean;
+}
+
+export interface HotspotCategory {
+  name: string;
+  keywords: string[];  // 4–8 keywords for this category
+  lastAnalyzedAt: string | null;
 }
 
 export interface XhsComment {

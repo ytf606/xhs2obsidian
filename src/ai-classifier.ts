@@ -62,6 +62,63 @@ export async function classifyNote(
   }
 }
 
+export async function generateAiTags(
+  title: string,
+  desc: string,
+  existingTags: string[],
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+): Promise<string[]> {
+  if (!apiKey || !baseUrl) return [];
+
+  const existing = existingTags.length ? existingTags.map(t => `#${t}`).join(' ') : '无';
+  const userPrompt =
+    `请为以下小红书笔记生成 3–6 个语义标签，用于知识库分类检索。\n\n` +
+    `标题：${title}\n正文：${desc.slice(0, 600)}\n已有标签：${existing}\n\n` +
+    `要求：\n` +
+    `1. 只输出一个 JSON 数组，格式：["标签1", "标签2", ...]\n` +
+    `2. 每个标签 2–8 个中文字，概念清晰，不重复已有标签\n` +
+    `3. 优先选择主题领域、受众群体、内容类型等维度\n` +
+    `4. 不要输出其他任何文字\n\n标签数组：`;
+
+  try {
+    const resp = await requestUrl({
+      url: `${baseUrl.replace(/\/$/, '')}/chat/completions`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: '你是一个专业的内容标签生成助手，只输出 JSON 数组，不输出其他内容。' },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 150,
+        temperature: 0.3,
+      }),
+      throw: false,
+    });
+
+    if (resp.status !== 200) {
+      logError('[AITagger] HTTP', resp.status, resp.text?.slice(0, 200));
+      return [];
+    }
+
+    const raw: string = resp.json?.choices?.[0]?.message?.content?.trim() ?? '';
+    log('[AITagger] raw:', raw);
+    const jsonStr = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+    const parsed = JSON.parse(jsonStr);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((t: unknown) => String(t).trim()).filter(Boolean);
+  } catch (e: any) {
+    logError('[AITagger] Error:', e.message);
+    return [];
+  }
+}
+
 export async function testAiConfig(
   apiKey: string,
   baseUrl: string,

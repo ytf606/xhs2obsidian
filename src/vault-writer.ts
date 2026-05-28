@@ -81,7 +81,7 @@ export class VaultWriter {
     private fetchBinary: (url: string) => Promise<ArrayBuffer>,
   ) {}
 
-  async write(note: XhsNote, target: string, category?: string, comments: XhsComment[] = []): Promise<void> {
+  async write(note: XhsNote, target: string, category?: string, comments: XhsComment[] = [], aiTags: string[] = []): Promise<void> {
     const folder = FOLDER_MAP[target] ?? target;
     const subDir = category ? `${folder}/${sanitize(category)}` : folder;
     const noteDir = normalizePath(`${this.rootFolder}/${subDir}`);
@@ -137,9 +137,11 @@ export class VaultWriter {
       }
     }
 
-    const tags = this.syncTags
+    const xhsTags = this.syncTags
       ? note.tagList.map(t => t.name).filter(Boolean)
       : [];
+    // Merge AI tags into the tags array (deduplicated), so they become Obsidian tags
+    const allTags = [...xhsTags, ...aiTags.filter(t => !xhsTags.includes(t))];
 
     const filePath = normalizePath(`${noteDir}/${fileName}.md`);
 
@@ -150,7 +152,8 @@ export class VaultWriter {
       `author: ${yamlStr(note.author.nickname)}`,
       `type: ${yamlStr(target)}`,
       `url: ${yamlStr(`https://www.xiaohongshu.com/explore/${note.id}?xsec_token=${encodeURIComponent(note.xsecToken)}&xsec_source=pc_feed`)}`,
-      tags.length ? `tags: ${yamlStr(tags)}` : `tags: []`,
+      allTags.length ? `tags: ${yamlStr(allTags)}` : `tags: []`,
+      ...(aiTags.length ? [`aiTags: ${yamlStr(aiTags)}`] : []),
       ...(category ? [`category: ${yamlStr(category)}`] : []),
       `createdAt: ${yamlStr(formatDate(note.time))}`,
       `syncedAt: ${yamlStr(nowString())}`,
@@ -251,9 +254,18 @@ export class VaultWriter {
     }
   }
 
-  private async ensureDir(path: string): Promise<void> {
-    if (!await this.vault.adapter.exists(path)) {
-      await this.vault.createFolder(path);
+  get root(): string {
+    return this.rootFolder;
+  }
+
+  // Creates each path segment from root down so intermediate dirs always exist.
+  async ensureDir(path: string): Promise<void> {
+    const parts = path.split('/').filter(Boolean);
+    for (let i = 1; i <= parts.length; i++) {
+      const partial = parts.slice(0, i).join('/');
+      if (!await this.vault.adapter.exists(partial)) {
+        await this.vault.createFolder(partial);
+      }
     }
   }
 

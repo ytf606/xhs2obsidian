@@ -41,6 +41,11 @@ function toNote(raw: any): XhsNote | null {
     const imageList: XhsImageItem[] = (raw.image_list ?? []).map((img: any) => ({
       url: img.url_default ?? img.url ?? '',
     })).filter((img: XhsImageItem) => img.url);
+    // Fallback to cover when list items have no image_list (search API only returns cover)
+    if (imageList.length === 0 && raw.cover) {
+      const coverUrl = raw.cover.url_default ?? raw.cover.url ?? '';
+      if (coverUrl) imageList.push({ url: coverUrl });
+    }
 
     const tagList: XhsTagItem[] = (raw.tag_list ?? []).map((tag: any) => ({
       id: tag.id ?? '',
@@ -106,11 +111,25 @@ function toComment(raw: any): XhsComment | null {
 }
 
 export class XhsApi {
+  private lastRequestTime = 0;
+  private static readonly MIN_INTERVAL_MS = 30_000; // 30 s global floor
+
   constructor(
     private sign: SignManager,
     private getCookies: () => string,
     private getUserId: () => string,
   ) {}
+
+  private async throttle(): Promise<void> {
+    const now = Date.now();
+    const elapsed = now - this.lastRequestTime;
+    if (this.lastRequestTime > 0 && elapsed < XhsApi.MIN_INTERVAL_MS) {
+      const wait = XhsApi.MIN_INTERVAL_MS - elapsed;
+      log(`[XhsApi] rate-limit: waiting ${Math.round(wait / 1000)}s`);
+      await new Promise<void>(r => setTimeout(r, wait));
+    }
+    this.lastRequestTime = Date.now();
+  }
 
   private async signedGet(
     path: string,
@@ -134,6 +153,7 @@ export class XhsApi {
   }
 
   async getMe(): Promise<{ userId: string; nickname: string }> {
+    await this.throttle();
     const cookies = this.getCookies();
     if (!cookies) throw new Error('未登录，请先登录小红书');
 
@@ -155,6 +175,7 @@ export class XhsApi {
   }
 
   async fetchPosts(userId: string, cursor: string | null, num: number): Promise<FetchResult> {
+    await this.throttle();
     const data = await this.signedGet('/api/sns/web/v1/user_posted', { userId, num, cursor });
     const list: any[] = (data as any)?.notes ?? (data as any)?.items ?? [];
     const items = list.map(toNote).filter((n): n is XhsNote => n !== null && !!n.id);
@@ -166,6 +187,7 @@ export class XhsApi {
   }
 
   async fetchBookmarks(cursor: string | null, num: number): Promise<FetchResult> {
+    await this.throttle();
     const data = await this.signedGet('/api/sns/web/v2/note/collect/page', { userId: this.getUserId(), num, cursor });
     const list: any[] = (data as any)?.notes ?? (data as any)?.items ?? [];
     const items = list.map(toNote).filter((n): n is XhsNote => n !== null && !!n.id);
@@ -177,6 +199,7 @@ export class XhsApi {
   }
 
   async fetchLikes(cursor: string | null, num: number): Promise<FetchResult> {
+    await this.throttle();
     const data = await this.signedGet('/api/sns/web/v1/note/like/page', { userId: this.getUserId(), num, cursor });
     const list: any[] = (data as any)?.notes ?? (data as any)?.items ?? [];
     const items = list.map(toNote).filter((n): n is XhsNote => n !== null && !!n.id);
@@ -217,6 +240,8 @@ export class XhsApi {
       geo: '',
       image_formats: ['jpg', 'webp', 'avif'],
     };
+    await this.throttle();
+    if (!this.getCookies()) throw new Error('未登录，请先登录小红书');
     log(`[RedbookPull] searchNotes "${keyword}" page=${page}`);
     const data = await this.sign.request(path, fetchUrl, 'POST', body, this.getCookies());
     log(`[RedbookPull] searchNotes raw data=${JSON.stringify(data).slice(0, 800)}`);
@@ -233,6 +258,7 @@ export class XhsApi {
   }
 
   async fetchUserProfileAndNotes(userId: string, xsecToken = ''): Promise<{ profile: XhsUserProfile; notes: XhsNote[] }> {
+    await this.throttle();
     if (!this.getCookies()) throw new Error('未登录，请先登录小红书');
     log(`[XhsApi] fetchUserProfileAndNotes via page userId=${userId}`);
 
@@ -299,6 +325,7 @@ export class XhsApi {
   }
 
   async fetchNoteDetail(noteId: string, xsecToken: string): Promise<XhsNote | null> {
+    await this.throttle();
     const path = '/api/sns/web/v1/feed';
     const fetchUrl = `${API_BASE}${path}`;
     const body = {
@@ -317,6 +344,7 @@ export class XhsApi {
   }
 
   async fetchComments(noteId: string, cursor: string, xsecToken: string): Promise<{ comments: XhsComment[]; cursor: string; hasMore: boolean }> {
+    await this.throttle();
     if (!this.getCookies()) throw new Error('未登录，请先登录小红书');
     const parts: string[] = [];
     parts.push(`note_id=${encodeURIComponent(noteId)}`);
@@ -338,6 +366,7 @@ export class XhsApi {
   }
 
   async fetchSubComments(noteId: string, rootCommentId: string, cursor: string): Promise<{ comments: XhsComment[]; cursor: string; hasMore: boolean }> {
+    await this.throttle();
     if (!this.getCookies()) throw new Error('未登录，请先登录小红书');
     const parts: string[] = [];
     parts.push(`note_id=${encodeURIComponent(noteId)}`);
